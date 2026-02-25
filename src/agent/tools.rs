@@ -365,5 +365,65 @@ pub fn all_tools() -> Vec<Tool> {
                 "required": ["expression"]
             }),
         },
+        Tool {
+            name: "chart_sparkline".to_string(),
+            description: "Render a sparkline chart inline in the chat. Use this to visualize \
+                time-series data like portfolio performance, net worth over time, or price \
+                history. The chart renders as a compact bar chart using Unicode characters. \
+                Pass the numeric values in chronological order. \
+                Best for: performance history, price trends, investment contributions over time."
+                .to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Chart title displayed above the sparkline"
+                    },
+                    "data": {
+                        "type": "array",
+                        "items": { "type": "number" },
+                        "description": "Array of numeric values in chronological order (e.g. daily net worth values)"
+                    }
+                },
+                "required": ["title", "data"]
+            }),
+        },
+        Tool {
+            name: "chart_bar".to_string(),
+            description: "Render a bar chart inline in the chat. Use this to visualize \
+                categorical data like portfolio allocation by asset class, holdings by value, \
+                dividends by month/year, or account balances. Each bar has a label and value. \
+                Best for: allocation breakdowns, comparisons, ranked lists."
+                .to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Chart title displayed above the bar chart"
+                    },
+                    "bars": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": {
+                                    "type": "string",
+                                    "description": "Bar label (e.g. asset name, month, account)"
+                                },
+                                "value": {
+                                    "type": "number",
+                                    "description": "Numeric value for the bar height"
+                                }
+                            },
+                            "required": ["label", "value"]
+                        },
+                        "description": "Array of { label, value } objects for each bar"
+                    }
+                },
+                "required": ["title", "bars"]
+            }),
+        },
     ]
 }

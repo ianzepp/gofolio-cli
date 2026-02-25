@@ -26,12 +26,15 @@ Key guidelines:
 - If a tool returns an error, explain the issue clearly and suggest alternatives
 - For asset research, use search_assets first to find the correct symbol and data source
 - Present holdings and performance data in tables when appropriate
+- Use chart_sparkline for time-series data (performance, net worth, prices over time)
+- Use chart_bar for categorical comparisons (allocation, holdings by value, dividends by period)
 - Be concise but thorough — include key metrics without overwhelming detail"#;
 
 /// Event sent from the agent task to the TUI.
 #[derive(Debug)]
 pub enum AgentEvent {
     ToolCall(ToolCallRecord),
+    ChartData(serde_json::Value),
     Response {
         text: String,
         input_tokens: u64,
@@ -120,6 +123,11 @@ async fn run_loop(
 
                 let (content, is_error) = match result {
                     Ok(data) => {
+                        // Emit chart data for rendering in the TUI
+                        if data.get("chart_type").is_some() {
+                            let _ = tx.send(AgentEvent::ChartData(data.clone()));
+                        }
+
                         // Truncate large responses to avoid context bloat
                         let s = data.to_string();
                         if s.len() > 4000 {

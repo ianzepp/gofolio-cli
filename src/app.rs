@@ -15,10 +15,24 @@ use crate::ui::login::{LoginField, LoginState};
 use crate::ui::modal::ModalState;
 
 #[derive(Debug, Clone)]
+pub enum ChartData {
+    Sparkline {
+        title: String,
+        data: Vec<u64>,
+    },
+    Bar {
+        title: String,
+        labels: Vec<String>,
+        values: Vec<u64>,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub struct ChatMessage {
     pub role: String,
     pub text: String,
     pub is_warning: bool,
+    pub chart: Option<ChartData>,
 }
 
 #[derive(Debug)]
@@ -97,6 +111,7 @@ impl AppState {
             role: "system".to_string(),
             text: text.to_string(),
             is_warning: false,
+            chart: None,
         });
     }
 
@@ -105,6 +120,7 @@ impl AppState {
             role: "system".to_string(),
             text: text.to_string(),
             is_warning: true,
+            chart: None,
         });
     }
 
@@ -178,6 +194,7 @@ impl AppState {
             role: "user".to_string(),
             text: text.clone(),
             is_warning: false,
+            chart: None,
         });
 
         // Add to conversation history
@@ -221,6 +238,17 @@ impl AppState {
             AgentEvent::ToolCall(tc) => {
                 self.tool_calls.push(tc);
             }
+            AgentEvent::ChartData(data) => {
+                let chart = parse_chart_data(&data);
+                if let Some(chart) = chart {
+                    self.messages.push(ChatMessage {
+                        role: "system".to_string(),
+                        text: String::new(),
+                        is_warning: false,
+                        chart: Some(chart),
+                    });
+                }
+            }
             AgentEvent::Response {
                 text,
                 input_tokens,
@@ -241,6 +269,7 @@ impl AppState {
                     role: "agent".to_string(),
                     text: text.clone(),
                     is_warning: false,
+                    chart: None,
                 });
 
                 // Add assistant response to history
@@ -507,5 +536,34 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
                 }
             }
         }
+    }
+}
+
+fn parse_chart_data(data: &serde_json::Value) -> Option<ChartData> {
+    match data["chart_type"].as_str()? {
+        "sparkline" => {
+            let title = data["title"].as_str().unwrap_or("Chart").to_string();
+            let values: Vec<u64> = data["data"]
+                .as_array()?
+                .iter()
+                .filter_map(|v| v.as_f64().map(|f| f.max(0.0) as u64))
+                .collect();
+            Some(ChartData::Sparkline { title, data: values })
+        }
+        "bar" => {
+            let title = data["title"].as_str().unwrap_or("Chart").to_string();
+            let labels: Vec<String> = data["labels"]
+                .as_array()?
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+            let values: Vec<u64> = data["values"]
+                .as_array()?
+                .iter()
+                .filter_map(|v| v.as_f64().map(|f| f.max(0.0) as u64))
+                .collect();
+            Some(ChartData::Bar { title, labels, values })
+        }
+        _ => None,
     }
 }

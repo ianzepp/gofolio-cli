@@ -3,6 +3,7 @@ mod activities;
 mod assets;
 mod benchmarks;
 pub mod calculator;
+pub mod charts;
 mod performance;
 mod portfolio;
 
@@ -28,6 +29,10 @@ pub async fn dispatch(
         "get_market_data" => assets::get_market_data(client).await,
         "get_benchmarks" => benchmarks::get_benchmarks(client).await,
         "calculate" => calculator::evaluate(input)
+            .map_err(ApiError::Request),
+        "chart_sparkline" => charts::sparkline(input)
+            .map_err(ApiError::Request),
+        "chart_bar" => charts::bar(input)
             .map_err(ApiError::Request),
         _ => Err(ApiError::Request(format!("unknown tool: {tool_name}"))),
     }
