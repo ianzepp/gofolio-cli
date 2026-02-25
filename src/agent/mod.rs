@@ -25,6 +25,7 @@ pub enum AgentEvent {
         text: String,
         input_tokens: u64,
         output_tokens: u64,
+        last_input_tokens: u64,
         steps: usize,
     },
     Error(String),
@@ -60,6 +61,7 @@ async fn run_loop(
 
     let mut total_input_tokens: u64 = 0;
     let mut total_output_tokens: u64 = 0;
+    let mut last_input_tokens: u64 = 0;
 
     for (steps, round) in (0..MAX_TOOL_ROUNDS).enumerate() {
         info!(round = round + 1, messages = messages.len(), "agent: llm round start");
@@ -70,6 +72,7 @@ async fn run_loop(
 
         total_input_tokens += response.input_tokens;
         total_output_tokens += response.output_tokens;
+        last_input_tokens = response.input_tokens;
 
         info!(
             round = round + 1,
@@ -84,6 +87,7 @@ async fn run_loop(
                 text,
                 input_tokens: total_input_tokens,
                 output_tokens: total_output_tokens,
+                last_input_tokens,
                 steps: steps + 1,
             });
             return Ok(());
@@ -143,6 +147,27 @@ async fn run_loop(
                 role: "user".to_string(),
                 content: Content::Blocks(tool_results),
             });
+
+            // Prune tool results from earlier rounds to save context
+            // Keep only the latest tool result message (the one we just pushed) intact
+            let last_idx = messages.len() - 1;
+            for (idx, msg) in messages.iter_mut().enumerate() {
+                if idx >= last_idx {
+                    break;
+                }
+                if let Content::Blocks(ref mut blocks) = msg.content {
+                    for block in blocks.iter_mut() {
+                        if let ContentBlock::ToolResult {
+                            content, ..
+                        } = block
+                        {
+                            if content.len() > 100 {
+                                *content = format!("{}...", &content[..100]);
+                            }
+                        }
+                    }
+                }
+            }
 
             continue;
         }

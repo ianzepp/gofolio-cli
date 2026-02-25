@@ -55,6 +55,7 @@ pub struct AppState {
     pub total_output_tokens: u64,
     pub total_steps: usize,
     pub latency_ms: u64,
+    pub last_input_tokens: u64,
     pub feedback: Option<i8>, // 1 = thumbs up, -1 = thumbs down
     pub modal: Option<ModalState>,
     pub available_models: Vec<ModelEntry>,
@@ -97,6 +98,7 @@ impl AppState {
             total_output_tokens: 0,
             total_steps: 0,
             latency_ms: 0,
+            last_input_tokens: 0,
             feedback: None,
             modal: None,
             available_models: Vec::new(),
@@ -136,6 +138,7 @@ impl AppState {
         self.total_output_tokens = 0;
         self.total_steps = 0;
         self.latency_ms = 0;
+        self.last_input_tokens = 0;
         self.feedback = None;
         self.loading = false;
         self.push_system("Session cleared. Type a message to begin.");
@@ -256,12 +259,14 @@ impl AppState {
                 text,
                 input_tokens,
                 output_tokens,
+                last_input_tokens,
                 steps,
             } => {
                 self.loading = false;
                 self.turn_count += 1;
                 self.total_input_tokens += input_tokens;
                 self.total_output_tokens += output_tokens;
+                self.last_input_tokens = last_input_tokens;
                 self.total_steps += steps;
                 self.latency_ms = self
                     .request_start
