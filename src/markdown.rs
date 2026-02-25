@@ -456,6 +456,10 @@ fn split_words(text: &str) -> Vec<String> {
     words
 }
 
+#[cfg(test)]
+#[path = "markdown_test.rs"]
+mod tests;
+
 /// Apply a foreground color to all spans that don't already have one.
 pub fn apply_default_color(lines: &mut [Line<'static>], color: ratatui::style::Color) {
     for line in lines.iter_mut() {
