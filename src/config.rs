@@ -26,6 +26,10 @@ pub struct Config {
     /// Rust CLI extension — not present in original config.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anthropic_api_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub langchain_api_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub langchain_project: Option<String>,
 }
 
 impl Config {
@@ -83,6 +87,21 @@ impl Config {
             .ok()
             .or_else(|| self.model.clone())
             .unwrap_or_else(|| "claude-sonnet-4-6".to_string())
+    }
+
+    /// Resolve LangChain/LangSmith API key: env > config.
+    pub fn langchain_api_key(&self) -> Option<String> {
+        std::env::var("LANGCHAIN_API_KEY")
+            .ok()
+            .or_else(|| self.langchain_api_key.clone())
+    }
+
+    /// Resolve LangChain/LangSmith project name: env > config > default.
+    pub fn langchain_project(&self) -> String {
+        std::env::var("LANGCHAIN_PROJECT")
+            .ok()
+            .or_else(|| self.langchain_project.clone())
+            .unwrap_or_else(|| "ghostfolio".to_string())
     }
 
     /// Set auth fields (deep-merge, matching original updateConfig behavior).

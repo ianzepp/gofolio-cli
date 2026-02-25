@@ -2,8 +2,8 @@ mod agent;
 mod api;
 mod app;
 mod config;
+mod langsmith;
 mod market;
-#[allow(dead_code)]
 mod markdown;
 mod theme;
 mod tools;
@@ -67,9 +67,15 @@ async fn main() {
                                 cfg.anthropic_api_key = Some(value.to_string());
                             }
                             "model" => cfg.model = Some(value.to_string()),
+                            "langchain_api_key" => {
+                                cfg.langchain_api_key = Some(value.to_string());
+                            }
+                            "langchain_project" => {
+                                cfg.langchain_project = Some(value.to_string());
+                            }
                             _ => {
                                 eprintln!("Unknown config key: {key}");
-                                eprintln!("Valid keys: url, token, anthropic_api_key, model");
+                                eprintln!("Valid keys: url, token, anthropic_api_key, model, langchain_api_key, langchain_project");
                                 std::process::exit(1);
                             }
                         }
@@ -111,6 +117,18 @@ async fn main() {
                 println!(
                     "model          = {}",
                     cfg.model.as_deref().unwrap_or("claude-sonnet-4-6")
+                );
+                println!(
+                    "langchain_key  = {}",
+                    if cfg.langchain_api_key().is_some() {
+                        "***"
+                    } else {
+                        "(not set)"
+                    }
+                );
+                println!(
+                    "langchain_proj = {}",
+                    cfg.langchain_project()
                 );
                 if let Some(ref traits) = cfg.traits
                     && !traits.is_empty()

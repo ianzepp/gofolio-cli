@@ -10,6 +10,7 @@ use tracing::{info, warn};
 use self::client::AnthropicClient;
 use self::types::{AgentError, Content, ContentBlock, Message, ToolCallRecord};
 use crate::api::GhostfolioClient;
+use crate::langsmith::{LangSmithConfig, Trace};
 use crate::tools as tool_dispatch;
 
 const MAX_TOOL_ROUNDS: usize = 20;
@@ -37,10 +38,12 @@ pub fn spawn_agent(
     anthropic_key: String,
     model: String,
     history: Vec<Message>,
+    langsmith: Option<LangSmithConfig>,
     tx: mpsc::UnboundedSender<AgentEvent>,
 ) {
     tokio::spawn(async move {
-        match run_loop(&api_client, &anthropic_key, &model, history, &tx).await {
+        match run_loop(&api_client, &anthropic_key, &model, history, langsmith.as_ref(), &tx).await
+        {
             Ok(()) => {}
             Err(e) => {
                 let _ = tx.send(AgentEvent::Error(e.to_string()));
@@ -54,10 +57,17 @@ async fn run_loop(
     anthropic_key: &str,
     model: &str,
     mut messages: Vec<Message>,
+    langsmith: Option<&LangSmithConfig>,
     tx: &mpsc::UnboundedSender<AgentEvent>,
 ) -> Result<(), AgentError> {
     let client = AnthropicClient::new(anthropic_key.to_string())?;
     let tools = tools::all_tools();
+
+    // Extract user input for the trace
+    let user_input = extract_last_user_input(&messages);
+
+    // Start LangSmith trace if configured
+    let trace = langsmith.map(|cfg| Trace::start(cfg, model, &user_input));
 
     let mut total_input_tokens: u64 = 0;
     let mut total_output_tokens: u64 = 0;
@@ -66,13 +76,26 @@ async fn run_loop(
     for (steps, round) in (0..MAX_TOOL_ROUNDS).enumerate() {
         info!(round = round + 1, messages = messages.len(), "agent: llm round start");
 
+        let llm_start = Instant::now();
         let response = client
             .chat(model, MAX_TOKENS, SYSTEM_PROMPT, &messages, Some(&tools))
             .await?;
+        let llm_duration_ms = llm_start.elapsed().as_millis() as u64;
 
         total_input_tokens += response.input_tokens;
         total_output_tokens += response.output_tokens;
         last_input_tokens = response.input_tokens;
+
+        // Log LLM call to LangSmith
+        if let Some(ref t) = trace {
+            t.log_llm_call(
+                model,
+                response.input_tokens,
+                response.output_tokens,
+                llm_duration_ms,
+                &response.stop_reason,
+            );
+        }
 
         info!(
             round = round + 1,
@@ -83,6 +106,11 @@ async fn run_loop(
 
         if response.stop_reason == "end_turn" || response.stop_reason == "max_tokens" {
             let text = extract_text(&response.content);
+
+            if let Some(ref t) = trace {
+                t.finish(&text, total_input_tokens, total_output_tokens, steps + 1);
+            }
+
             let _ = tx.send(AgentEvent::Response {
                 text,
                 input_tokens: total_input_tokens,
@@ -129,6 +157,11 @@ async fn run_loop(
                     Err(e) => (format!("error: {e}"), true),
                 };
 
+                // Log tool call to LangSmith
+                if let Some(ref t) = trace {
+                    t.log_tool_call(name, duration_ms, !is_error);
+                }
+
                 let _ = tx.send(AgentEvent::ToolCall(ToolCallRecord {
                     name: name.clone(),
                     duration_ms,
@@ -173,11 +206,20 @@ async fn run_loop(
         }
 
         warn!(stop_reason = %response.stop_reason, "agent: unknown stop_reason");
+
+        if let Some(ref t) = trace {
+            t.finish_error(&format!("Unexpected stop reason: {}", response.stop_reason));
+        }
+
         let _ = tx.send(AgentEvent::Error(format!(
             "Unexpected stop reason: {}",
             response.stop_reason
         )));
         return Ok(());
+    }
+
+    if let Some(ref t) = trace {
+        t.finish_error(&format!("Max rounds exceeded: {}", MAX_TOOL_ROUNDS));
     }
 
     Err(AgentError::MaxRounds(MAX_TOOL_ROUNDS))
@@ -192,4 +234,16 @@ fn extract_text(blocks: &[ContentBlock]) -> String {
         })
         .collect::<Vec<_>>()
         .join("")
+}
+
+fn extract_last_user_input(messages: &[Message]) -> String {
+    messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .map(|m| match &m.content {
+            Content::Text(t) => t.clone(),
+            Content::Blocks(_) => "(tool results)".to_string(),
+        })
+        .unwrap_or_default()
 }

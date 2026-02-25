@@ -11,6 +11,7 @@ use crate::agent::types::{Content, Message, ToolCallRecord};
 use crate::agent::{self, AgentEvent};
 use crate::api::GhostfolioClient;
 use crate::config::Config;
+use crate::langsmith::LangSmithConfig;
 use crate::market::{self, MarketQuote};
 use crate::ui::login::{LoginField, LoginState};
 use crate::ui::modal::ModalState;
@@ -73,12 +74,14 @@ pub struct AppState {
     request_start: Option<Instant>,
     warmup_rx: Option<tokio::sync::oneshot::Receiver<warmup::WarmupData>>,
     market_rx: Option<mpsc::UnboundedReceiver<Vec<MarketQuote>>>,
+    langsmith: Option<LangSmithConfig>,
 }
 
 impl AppState {
     fn new() -> Self {
         let config = Config::load();
         let model = config.model();
+        let langsmith = LangSmithConfig::from_config(&config);
 
         // Check for pre-configured auth
         let has_token = config.access_token().is_some();
@@ -119,6 +122,7 @@ impl AppState {
             request_start: None,
             warmup_rx: None,
             market_rx: None,
+            langsmith,
         }
     }
 
@@ -249,6 +253,7 @@ impl AppState {
             api_key,
             self.model.clone(),
             self.history.clone(),
+            self.langsmith.clone(),
             tx,
         );
     }

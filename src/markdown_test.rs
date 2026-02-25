@@ -35,7 +35,7 @@ fn has_color(lines: &[Line], color: ratatui::style::Color) -> bool {
 #[test]
 fn h1_renders_with_bold_and_blank_line() {
     let result = render("# Hello World", 80);
-    assert_eq!(text(&result), vec!["Hello World", ""]);
+    assert_eq!(text(&result), vec!["Hello World"]);
     assert!(has_style(&result, Modifier::BOLD));
     assert!(has_color(&result, theme::AMBER));
 }
@@ -43,14 +43,14 @@ fn h1_renders_with_bold_and_blank_line() {
 #[test]
 fn h2_renders() {
     let result = render("## Section Title", 80);
-    assert_eq!(text(&result), vec!["Section Title", ""]);
+    assert_eq!(text(&result), vec!["Section Title"]);
     assert!(has_style(&result, Modifier::BOLD));
 }
 
 #[test]
 fn h3_renders() {
     let result = render("### Subsection", 80);
-    assert_eq!(text(&result), vec!["Subsection", ""]);
+    assert_eq!(text(&result), vec!["Subsection"]);
     assert!(has_style(&result, Modifier::BOLD));
 }
 
@@ -351,21 +351,19 @@ fn zero_width_no_wrap() {
 fn empty_input() {
     let result = render("", 80);
     let t = text(&result);
-    assert_eq!(t, vec![""]);
+    assert!(t.is_empty());
 }
 
 #[test]
 fn only_blank_lines() {
     let result = render("\n\n\n", 80);
-    let t = text(&result);
-    assert!(t.iter().all(|l| l.is_empty()));
+    assert!(result.is_empty());
 }
 
 #[test]
 fn single_newline() {
     let result = render("\n", 80);
-    let t = text(&result);
-    assert_eq!(t, vec!["", ""]);
+    assert!(result.is_empty());
 }
 
 // ============================================================================

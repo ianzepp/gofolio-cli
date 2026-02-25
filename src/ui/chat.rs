@@ -5,6 +5,7 @@ use ratatui::widgets::{Bar, BarChart, BarGroup, Block, Paragraph, Sparkline};
 use ratatui::Frame;
 
 use crate::app::{AppState, ChartData};
+use crate::markdown;
 use crate::theme;
 
 /// A renderable item in the chat panel — either text lines or an inline chart.
@@ -81,11 +82,17 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
             theme::WHITE
         };
 
-        // Plain text with line wrapping
-        let mut msg_lines: Vec<Line<'static>> = msg.text
-            .lines()
-            .flat_map(|line| wrap_line(line, content_width, text_color))
-            .collect();
+        // Render agent messages with markdown, user/system as plain text
+        let mut msg_lines: Vec<Line<'static>> = if msg.role == "agent" {
+            let mut lines = markdown::render(&msg.text, content_width);
+            markdown::apply_default_color(&mut lines, text_color);
+            lines
+        } else {
+            msg.text
+                .lines()
+                .flat_map(|line| wrap_line(line, content_width, text_color))
+                .collect()
+        };
 
         if msg_lines.is_empty() {
             msg_lines.push(Line::from(Span::styled("", Style::default().fg(text_color))));

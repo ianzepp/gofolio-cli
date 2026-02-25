@@ -720,6 +720,7 @@ dependencies = [
  "clap",
  "crossterm 0.28.1",
  "dirs",
+ "getrandom 0.3.4",
  "ratatui",
  "reqwest",
  "serde",
