@@ -13,6 +13,7 @@ use crate::api::GhostfolioClient;
 use crate::config::Config;
 use crate::ui::login::{LoginField, LoginState};
 use crate::ui::modal::ModalState;
+use crate::warmup;
 
 #[derive(Debug, Clone)]
 pub enum ChartData {
@@ -64,6 +65,7 @@ pub struct AppState {
     history: Vec<Message>,
     agent_rx: Option<mpsc::UnboundedReceiver<AgentEvent>>,
     request_start: Option<Instant>,
+    warmup_rx: Option<tokio::sync::oneshot::Receiver<warmup::WarmupData>>,
 }
 
 impl AppState {
@@ -103,6 +105,7 @@ impl AppState {
             history: Vec::new(),
             agent_rx: None,
             request_start: None,
+            warmup_rx: None,
         }
     }
 
@@ -319,9 +322,11 @@ impl AppState {
 
         match crate::api::auth::authenticate(&self.config).await {
             Ok((jwt, base_url)) => {
-                self.api_client = Some(GhostfolioClient::new(base_url, jwt));
+                let client = GhostfolioClient::new(base_url, jwt);
+                self.warmup_rx = Some(warmup::spawn_warmup(client.clone()));
+                self.api_client = Some(client);
                 self.screen = Screen::App;
-                self.push_system("Connected. Type a message to begin.");
+                self.push_system("Connected. Loading portfolio data...");
                 self.load_models().await;
             }
             Err(_) => {
@@ -340,9 +345,11 @@ impl AppState {
                 self.config.set_auth(Some(url.clone()), Some(token));
                 self.config.save();
 
-                self.api_client = Some(GhostfolioClient::new(url, jwt));
+                let client = GhostfolioClient::new(url, jwt);
+                self.warmup_rx = Some(warmup::spawn_warmup(client.clone()));
+                self.api_client = Some(client);
                 self.screen = Screen::App;
-                self.push_system("Connected. Type a message to begin.");
+                self.push_system("Connected. Loading portfolio data...");
                 self.load_models().await;
             }
             Err(e) => {
@@ -384,6 +391,29 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
             event::poll(std::time::Duration::from_millis(50))
         })?;
 
+        // Check warmup channel
+        if let Some(ref mut rx) = state.warmup_rx {
+            if let Ok(data) = rx.try_recv() {
+                if !data.context.is_empty() {
+                    // Inject as a prefilled user→assistant exchange so the LLM has context
+                    state.history.push(Message {
+                        role: "user".to_string(),
+                        content: Content::Text(data.context),
+                    });
+                    state.history.push(Message {
+                        role: "assistant".to_string(),
+                        content: Content::Text(
+                            "Understood. I have your portfolio data loaded and ready. How can I help?".to_string(),
+                        ),
+                    });
+                    state.push_system("Portfolio data loaded. Type a message to begin.");
+                } else {
+                    state.push_system("Ready. Type a message to begin.");
+                }
+                state.warmup_rx = None;
+            }
+        }
+
         // Check agent channel — collect events first to avoid double borrow
         let mut agent_events = Vec::new();
         if let Some(ref mut rx) = state.agent_rx {
@@ -405,7 +435,9 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
             Screen::Login(login) => {
                 if let Event::Key(key) = event {
                     match key.code {
-                        KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        KeyCode::Char('q') | KeyCode::Char('c')
+                            if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                        {
                             return Ok(());
                         }
                         KeyCode::Esc => return Ok(()),
@@ -497,7 +529,7 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
                     // Ctrl shortcuts
                     if key.modifiers.contains(KeyModifiers::CONTROL) {
                         match key.code {
-                            KeyCode::Char('q') => return Ok(()),
+                            KeyCode::Char('q') | KeyCode::Char('c') => return Ok(()),
                             KeyCode::Char('n') => state.clear_session(),
                             KeyCode::Char('y') => {
                                 state.feedback = Some(1);

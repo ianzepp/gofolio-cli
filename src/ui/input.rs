@@ -1,22 +1,18 @@
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::app::AppState;
 use crate::theme;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
-    let block = Block::default()
-        .borders(Borders::TOP)
-        .border_style(Style::default().fg(theme::BORDER));
-
     let prompt_style = Style::default()
         .fg(theme::AMBER)
         .add_modifier(Modifier::BOLD);
 
-    let line = if state.loading {
+    let input_line = if state.loading {
         Line::from(vec![
             Span::styled(">>> ", prompt_style),
             Span::styled("waiting...", Style::default().fg(theme::MUTED)),
@@ -29,6 +25,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
         ])
     };
 
-    let paragraph = Paragraph::new(line).block(block);
+    let lines = vec![Line::from(""), input_line, Line::from("")];
+    let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, area);
 }

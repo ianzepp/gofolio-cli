@@ -8,7 +8,7 @@ pub async fn get_performance(
 ) -> Result<serde_json::Value, ApiError> {
     let params = query_params(input, &["range", "accounts", "assetClasses", "dataSource", "symbol", "tags"]);
     let refs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-    client.get_with_query("/api/v1/portfolio/performance", &refs).await
+    client.get_with_query("/api/v2/portfolio/performance", &refs).await
 }
 
 pub async fn get_dividends(

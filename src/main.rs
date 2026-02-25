@@ -6,6 +6,7 @@ mod markdown;
 mod theme;
 mod tools;
 mod ui;
+mod warmup;
 
 use clap::{Parser, Subcommand};
 
