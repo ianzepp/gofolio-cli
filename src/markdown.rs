@@ -1,316 +1,174 @@
-use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::theme;
+/// Render markdown text into wrapped ratatui Lines.
+///
+/// Uses `tui-markdown` (pulldown-cmark) for parsing, then wraps long lines
+/// to fit within `width` columns.
+pub fn render(input: &str, width: usize) -> Vec<Line<'static>> {
+    let text = tui_markdown::from_str(input);
+    let mut result = Vec::new();
 
-/// A parsed block of markdown content.
-pub enum Block {
-    Heading { text: String },
-    Hr,
-    Table { headers: Vec<String>, rows: Vec<Vec<String>>, col_widths: Vec<usize> },
-    Code { text: String },
-    Text { text: String },
-    Empty,
-}
-
-/// Parse markdown text into blocks.
-pub fn parse_blocks(input: &str) -> Vec<Block> {
-    let lines: Vec<&str> = input.split('\n').collect();
-    let mut blocks = Vec::new();
-    let mut i = 0;
-
-    while i < lines.len() {
-        let line = lines[i];
-
-        // Fenced code block
-        if line.starts_with("```") {
-            let mut code_lines = Vec::new();
-            i += 1;
-            while i < lines.len() && !lines[i].starts_with("```") {
-                code_lines.push(lines[i]);
-                i += 1;
-            }
-            i += 1; // skip closing ```
-            blocks.push(Block::Code {
-                text: code_lines.join("\n"),
-            });
-            continue;
-        }
-
-        // Heading
-        if let Some(rest) = line.strip_prefix("### ")
-            .or_else(|| line.strip_prefix("## "))
-            .or_else(|| line.strip_prefix("# "))
-        {
-            blocks.push(Block::Heading {
-                text: rest.to_string(),
-            });
-            i += 1;
-            continue;
-        }
-
-        // Horizontal rule
-        if line.len() >= 3
-            && line
-                .trim()
-                .chars()
-                .all(|c| c == '-' || c == '*' || c == '_')
-        {
-            blocks.push(Block::Hr);
-            i += 1;
-            continue;
-        }
-
-        // Table: consecutive lines starting with |
-        if line.starts_with('|') {
-            let mut table_lines = Vec::new();
-            while i < lines.len() && lines[i].starts_with('|') {
-                table_lines.push(lines[i]);
-                i += 1;
-            }
-            if let Some(table) = parse_table(&table_lines) {
-                blocks.push(table);
-            } else {
-                blocks.push(Block::Text {
-                    text: table_lines.join("\n"),
-                });
-            }
-            continue;
-        }
-
-        // Bullet
-        if let Some(captures) = parse_bullet(line) {
-            blocks.push(Block::Text {
-                text: format!("{}\u{2022} {}", captures.0, captures.1),
-            });
-            i += 1;
-            continue;
-        }
-
-        // Empty line
-        if line.trim().is_empty() {
-            blocks.push(Block::Empty);
-            i += 1;
-            continue;
-        }
-
-        // Plain text — collapse consecutive non-special lines
-        let mut text_lines = Vec::new();
-        while i < lines.len() && !is_special_line(lines[i]) {
-            text_lines.push(lines[i]);
-            i += 1;
-        }
-        blocks.push(Block::Text {
-            text: text_lines.join(" "),
-        });
+    for line in text.lines {
+        // Convert borrowed spans to owned so we can return 'static
+        let owned_line = own_line(line);
+        let wrapped = wrap_line(owned_line, width);
+        result.extend(wrapped);
     }
 
-    // Collapse consecutive empties and remove empties adjacent to headings/hrs and remove empties adjacent to headings/hrs
-    let mut collapsed = Vec::new();
-    for block in blocks {
-        let skip = match &block {
-            Block::Empty => {
-                matches!(collapsed.last(), None | Some(Block::Empty) | Some(Block::Hr | Block::Heading { .. }))
+    result
+}
+
+/// Convert a Line with borrowed content into one with owned (static) content.
+fn own_line(line: Line<'_>) -> Line<'static> {
+    let spans: Vec<Span<'static>> = line
+        .spans
+        .into_iter()
+        .map(|s| Span::styled(s.content.into_owned(), s.style))
+        .collect();
+    Line::from(spans).style(line.style)
+}
+
+/// Wrap a single Line's spans to fit within `width` columns.
+///
+/// Walks through each span, splitting on word boundaries when the current
+/// row exceeds the width. Continuation lines are not indented.
+fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
+    if width == 0 {
+        return vec![line];
+    }
+
+    let mut rows: Vec<Vec<Span<'static>>> = vec![Vec::new()];
+    let mut col = 0;
+
+    for span in line.spans {
+        let style = span.style;
+        let content = span.content.into_owned();
+
+        // For spans that are entirely whitespace or empty, just append
+        if content.is_empty() {
+            continue;
+        }
+
+        // Split content into words, preserving whitespace
+        let mut words = split_words(&content);
+
+        for word in words.drain(..) {
+            let word_len = word.len();
+
+            if word_len == 0 {
+                continue;
             }
-            Block::Hr | Block::Heading { .. } => {
-                // Remove preceding empty
-                if matches!(collapsed.last(), Some(Block::Empty)) {
-                    collapsed.pop();
+
+            // If this word alone exceeds width, force it on a new line and hard-break
+            if word_len > width {
+                if col > 0 {
+                    rows.push(Vec::new());
+                    col = 0;
                 }
-                false
-            }
-            _ => false,
-        };
-        if !skip {
-            collapsed.push(block);
-        }
-    }
-
-    collapsed
-}
-
-fn is_special_line(line: &str) -> bool {
-    line.trim().is_empty()
-        || line.starts_with('#')
-        || line.starts_with('|')
-        || line.starts_with("```")
-        || (line.len() >= 3
-            && line
-                .trim()
-                .chars()
-                .all(|c| c == '-' || c == '*' || c == '_'))
-        || parse_bullet(line).is_some()
-}
-
-fn parse_bullet(line: &str) -> Option<(&str, &str)> {
-    let trimmed = line.trim_start();
-    let indent_len = line.len() - trimmed.len();
-    let indent = &line[..indent_len];
-    if let Some(rest) = trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* ")) {
-        Some((indent, rest))
-    } else {
-        None
-    }
-}
-
-fn parse_table(lines: &[&str]) -> Option<Block> {
-    if lines.len() < 2 {
-        return None;
-    }
-
-    let split_row = |line: &str| -> Vec<String> {
-        line.trim_start_matches('|')
-            .trim_end_matches('|')
-            .split('|')
-            .map(|c| c.trim().to_string())
-            .collect()
-    };
-
-    let headers = split_row(lines[0]);
-    let sep = split_row(lines[1]);
-
-    // Validate separator
-    if !sep.iter().all(|c| c.chars().all(|ch| ch == '-' || ch == ':')) {
-        return None;
-    }
-
-    let rows: Vec<Vec<String>> = lines[2..].iter().map(|l| split_row(l)).collect();
-
-    // Calculate column widths
-    let col_widths: Vec<usize> = headers
-        .iter()
-        .enumerate()
-        .map(|(i, h)| {
-            let mut max = display_len(h);
-            for row in &rows {
-                if let Some(cell) = row.get(i) {
-                    let len = display_len(cell);
-                    if len > max {
-                        max = len;
+                // Hard-break the long word
+                let mut remaining = word.as_str();
+                while !remaining.is_empty() {
+                    let take = remaining.len().min(width);
+                    let (chunk, rest) = remaining.split_at(take);
+                    rows.last_mut()
+                        .unwrap()
+                        .push(Span::styled(chunk.to_string(), style));
+                    remaining = rest;
+                    if !remaining.is_empty() {
+                        rows.push(Vec::new());
+                        col = 0;
+                    } else {
+                        col = take;
                     }
                 }
+                continue;
             }
-            max
-        })
-        .collect();
 
-    Some(Block::Table {
-        headers,
-        rows,
-        col_widths,
-    })
-}
+            // Would this word overflow the current line?
+            if col > 0 && col + word_len > width {
+                // Start a new line
+                rows.push(Vec::new());
+                col = 0;
 
-/// Visible length after stripping **bold** markers.
-fn display_len(text: &str) -> usize {
-    text.replace("**", "").len()
-}
-
-/// Render a Block into ratatui Lines.
-pub fn render_block(block: &Block, width: usize) -> Vec<Line<'static>> {
-    match block {
-        Block::Heading { text } => {
-            vec![Line::from(Span::styled(
-                text.clone(),
-                Style::default().fg(theme::AMBER).add_modifier(Modifier::BOLD),
-            ))]
-        }
-        Block::Hr => {
-            let rule = "\u{2500}".repeat(width.min(40));
-            vec![Line::from(Span::styled(rule, Style::default().fg(theme::MUTED)))]
-        }
-        Block::Code { text } => text
-            .lines()
-            .map(|l| {
-                Line::from(Span::styled(
-                    format!("  {l}"),
-                    Style::default().fg(theme::MUTED),
-                ))
-            })
-            .collect(),
-        Block::Table {
-            headers,
-            rows,
-            col_widths,
-        } => render_table(headers, rows, col_widths),
-        Block::Text { text } => {
-            if text.is_empty() {
-                return vec![Line::from("")];
+                // Skip leading whitespace on the new line
+                let trimmed = word.trim_start();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let trimmed_len = trimmed.len();
+                rows.last_mut()
+                    .unwrap()
+                    .push(Span::styled(trimmed.to_string(), style));
+                col += trimmed_len;
+            } else {
+                rows.last_mut()
+                    .unwrap()
+                    .push(Span::styled(word.clone(), style));
+                col += word_len;
             }
-            vec![Line::from(parse_inline(text, theme::WHITE))]
         }
-        Block::Empty => vec![Line::from("")],
     }
+
+    rows.into_iter()
+        .map(|spans| Line::from(spans).style(line.style))
+        .collect()
 }
 
-fn render_table(
-    headers: &[String],
-    rows: &[Vec<String>],
-    col_widths: &[usize],
-) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
+/// Split text into word chunks, keeping whitespace attached to the following word
+/// so that wrapping doesn't lose spaces.
+///
+/// Example: "hello world  foo" → ["hello", " world", "  foo"]
+fn split_words(text: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut chars = text.chars().peekable();
 
-    // Header row
-    let header_spans = render_table_row(headers, col_widths, theme::WHITE);
-    lines.push(Line::from(header_spans));
-
-    // Separator
-    let sep: String = col_widths
-        .iter()
-        .map(|w| "\u{2500}".repeat(*w))
-        .collect::<Vec<_>>()
-        .join("\u{2500}\u{253C}\u{2500}");
-    lines.push(Line::from(Span::styled(sep, Style::default().fg(theme::MUTED))));
-
-    // Data rows
-    for row in rows {
-        let spans = render_table_row(row, col_widths, theme::WHITE);
-        lines.push(Line::from(spans));
+    // First word: no leading whitespace grouping
+    let mut current = String::new();
+    while let Some(&c) = chars.peek() {
+        if c.is_whitespace() {
+            break;
+        }
+        current.push(c);
+        chars.next();
+    }
+    if !current.is_empty() {
+        words.push(current);
     }
 
-    lines
+    // Subsequent words: whitespace prefix + word
+    while chars.peek().is_some() {
+        let mut current = String::new();
+        // Consume whitespace
+        while let Some(&c) = chars.peek() {
+            if !c.is_whitespace() {
+                break;
+            }
+            current.push(c);
+            chars.next();
+        }
+        // Consume word characters
+        while let Some(&c) = chars.peek() {
+            if c.is_whitespace() {
+                break;
+            }
+            current.push(c);
+            chars.next();
+        }
+        if !current.is_empty() {
+            words.push(current);
+        }
+    }
+
+    words
 }
 
-fn render_table_row(
-    cells: &[String],
-    col_widths: &[usize],
-    color: ratatui::style::Color,
-) -> Vec<Span<'static>> {
-    let mut spans = Vec::new();
-    for (i, cell) in cells.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::styled(
-                " \u{2502} ".to_string(),
-                Style::default().fg(theme::MUTED),
-            ));
+/// Apply a foreground color to all spans in lines that don't already have one.
+pub fn apply_default_color(lines: &mut [Line<'static>], color: ratatui::style::Color) {
+    for line in lines.iter_mut() {
+        for span in &mut line.spans {
+            if span.style.fg.is_none() {
+                span.style = span.style.fg(color);
+            }
         }
-        let w = col_widths.get(i).copied().unwrap_or(0);
-        let display = cell.replace("**", "");
-        let pad = w.saturating_sub(display.len());
-        // Render with inline formatting
-        let mut cell_spans = parse_inline(cell, color);
-        if pad > 0 {
-            cell_spans.push(Span::raw(" ".repeat(pad)));
-        }
-        spans.extend(cell_spans);
     }
-    spans
-}
-
-/// Parse inline markdown (bold **text**) into styled Spans.
-fn parse_inline(text: &str, color: ratatui::style::Color) -> Vec<Span<'static>> {
-    let mut spans = Vec::new();
-    let parts: Vec<&str> = text.split("**").collect();
-    for (i, part) in parts.iter().enumerate() {
-        if part.is_empty() {
-            continue;
-        }
-        let style = if i % 2 == 1 {
-            Style::default().fg(color).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(color)
-        };
-        spans.push(Span::styled(part.to_string(), style));
-    }
-    spans
 }

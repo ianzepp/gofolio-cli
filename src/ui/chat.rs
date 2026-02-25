@@ -9,7 +9,8 @@ use crate::markdown;
 use crate::theme;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
-    let width = area.width.saturating_sub(6) as usize; // 4 for label + 2 padding
+    let prefix_width = 4; // "YOU " / "AGT " / "SYS " / "    "
+    let content_width = (area.width as usize).saturating_sub(prefix_width + 2); // 2 for padding
     let max_rows = area.height as usize;
 
     let mut all_lines: Vec<Line<'static>> = Vec::new();
@@ -27,13 +28,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
             theme::WHITE
         };
 
-        let blocks = markdown::parse_blocks(&msg.text);
-        let mut msg_lines: Vec<Line<'static>> = Vec::new();
-        for block in &blocks {
-            msg_lines.extend(markdown::render_block(block, width));
-        }
+        // Render markdown with line wrapping
+        let mut msg_lines = markdown::render(&msg.text, content_width);
 
-        // Prepend role label to first line
+        // Apply default text color
+        markdown::apply_default_color(&mut msg_lines, text_color);
+
+        // Prepend role label to first line, indent continuation lines
         for (i, line) in msg_lines.iter_mut().enumerate() {
             let prefix = if i == 0 {
                 Span::styled(
@@ -48,14 +49,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
 
             let mut new_spans = vec![prefix];
             new_spans.append(&mut line.spans);
-
-            // Apply text color to spans that don't have explicit styling
-            for span in &mut new_spans[1..] {
-                if span.style.fg.is_none() && !msg.is_warning {
-                    span.style = span.style.fg(text_color);
-                }
-            }
-
             *line = Line::from(new_spans);
         }
 
