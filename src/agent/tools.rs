@@ -342,5 +342,28 @@ pub fn all_tools() -> Vec<Tool> {
                 "required": []
             }),
         },
+        Tool {
+            name: "calculate".to_string(),
+            description: "Evaluate a mathematical expression. Use this for ALL arithmetic \
+                instead of computing in your head. Supports: +, -, *, /, ^ (power), \
+                % (modulo), parentheses, and functions: sqrt, abs, round(value, decimals), \
+                floor, ceil, min, max, pow, log, ln, log2. \
+                Constants: pi, e. Number separators allowed (1_000_000). \
+                Returns: { result: number, expression: string }. \
+                Examples: '(150 - 100) / 100 * 100' for percentage gain, \
+                '1000 * (1 + 0.07) ^ 10' for compound growth, \
+                'round(12345.6789, 2)' for rounding."
+                .to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "expression": {
+                        "type": "string",
+                        "description": "Mathematical expression to evaluate (e.g. '(500000 - 420000) / 420000 * 100')"
+                    }
+                },
+                "required": ["expression"]
+            }),
+        },
     ]
 }

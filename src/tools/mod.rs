@@ -2,6 +2,7 @@ mod accounts;
 mod activities;
 mod assets;
 mod benchmarks;
+pub mod calculator;
 mod performance;
 mod portfolio;
 
@@ -26,6 +27,8 @@ pub async fn dispatch(
         "get_asset_profile" => assets::get_asset_profile(client, input).await,
         "get_market_data" => assets::get_market_data(client).await,
         "get_benchmarks" => benchmarks::get_benchmarks(client).await,
+        "calculate" => calculator::evaluate(input)
+            .map_err(ApiError::Request),
         _ => Err(ApiError::Request(format!("unknown tool: {tool_name}"))),
     }
 }
