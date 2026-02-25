@@ -36,9 +36,9 @@ pub fn render(input: &str, width: usize) -> Vec<Line<'static>> {
             continue;
         }
 
-        // Horizontal rule
+        // Horizontal rule (must be 3+ of the same char, optionally with spaces)
         let trimmed = line.trim();
-        if trimmed.len() >= 3 && trimmed.chars().all(|c| c == '-' || c == '*' || c == '_') {
+        if trimmed.len() >= 3 && is_horizontal_rule(trimmed) {
             let rule = "\u{2500}".repeat(width.min(40));
             result.push(Line::from(Span::styled(
                 rule,
@@ -99,6 +99,14 @@ pub fn render(input: &str, width: usize) -> Vec<Line<'static>> {
             text_parts.push(lines[i]);
             i += 1;
         }
+
+        // Safety: if no lines were consumed, force-advance to prevent infinite loop
+        if text_parts.is_empty() {
+            result.push(Line::from(Span::raw(lines[i].to_string())));
+            i += 1;
+            continue;
+        }
+
         let paragraph = text_parts.join(" ");
         let spans = parse_inline_spans(&paragraph);
         let para_line = Line::from(spans);
@@ -112,12 +120,22 @@ pub fn render(input: &str, width: usize) -> Vec<Line<'static>> {
 fn is_block_start(line: &str) -> bool {
     let trimmed = line.trim();
     trimmed.is_empty()
-        || line.starts_with('#')
+        || line.starts_with("# ")
+        || line.starts_with("## ")
+        || line.starts_with("### ")
         || line.starts_with('|')
         || line.starts_with("```")
         || is_preformatted(line)
         || parse_bullet(line).is_some()
-        || (trimmed.len() >= 3 && trimmed.chars().all(|c| c == '-' || c == '*' || c == '_'))
+        || (trimmed.len() >= 3 && is_horizontal_rule(trimmed))
+}
+
+/// Check if text is a horizontal rule: 3+ of the same char (-, *, _), optionally with spaces.
+fn is_horizontal_rule(text: &str) -> bool {
+    let chars: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
+    chars.len() >= 3 && (chars.iter().all(|&c| c == '-')
+        || chars.iter().all(|&c| c == '*')
+        || chars.iter().all(|&c| c == '_'))
 }
 
 /// Check if a line contains box-drawing characters.
