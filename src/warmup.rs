@@ -6,6 +6,26 @@ use crate::api::GhostfolioClient;
 /// Pre-fetched portfolio context for the LLM.
 pub struct WarmupData {
     pub context: String,
+    pub portfolio: PortfolioSummary,
+}
+
+/// Structured portfolio data for the sidebar display.
+#[derive(Debug, Clone, Default)]
+pub struct PortfolioSummary {
+    pub total_value: Option<f64>,
+    pub total_investment: Option<f64>,
+    pub net_performance: Option<f64>,
+    pub net_performance_pct: Option<f64>,
+    pub currency: String,
+    pub num_holdings: usize,
+    pub num_accounts: usize,
+    pub top_holdings: Vec<HoldingRow>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HoldingRow {
+    pub name: String,
+    pub allocation_pct: f64,
 }
 
 /// Spawn background tasks to fetch accounts, holdings, and performance,
@@ -30,10 +50,14 @@ async fn fetch_context(client: &GhostfolioClient) -> WarmupData {
     );
 
     let mut sections = Vec::new();
+    let mut summary = PortfolioSummary::default();
 
     match accounts {
         Ok(data) => {
             info!("warmup: accounts loaded");
+            if let Some(arr) = data.as_array() {
+                summary.num_accounts = arr.len();
+            }
             sections.push(format!("## Accounts\n```json\n{}\n```", truncate_json(&data)));
         }
         Err(e) => warn!(error = %e, "warmup: failed to fetch accounts"),
@@ -42,6 +66,7 @@ async fn fetch_context(client: &GhostfolioClient) -> WarmupData {
     match holdings {
         Ok(data) => {
             info!("warmup: holdings loaded");
+            extract_holdings(&data, &mut summary);
             sections.push(format!("## Holdings\n```json\n{}\n```", truncate_json(&data)));
         }
         Err(e) => warn!(error = %e, "warmup: failed to fetch holdings"),
@@ -50,6 +75,7 @@ async fn fetch_context(client: &GhostfolioClient) -> WarmupData {
     match performance {
         Ok(data) => {
             info!("warmup: performance loaded");
+            extract_performance(&data, &mut summary);
             sections.push(format!("## Performance\n```json\n{}\n```", truncate_json(&data)));
         }
         Err(e) => warn!(error = %e, "warmup: failed to fetch performance"),
@@ -65,7 +91,55 @@ async fn fetch_context(client: &GhostfolioClient) -> WarmupData {
     };
 
     info!(len = context.len(), "warmup: context ready");
-    WarmupData { context }
+    WarmupData { context, portfolio: summary }
+}
+
+fn extract_holdings(data: &serde_json::Value, summary: &mut PortfolioSummary) {
+    // Holdings endpoint returns { holdings: [...] }
+    let arr = data.get("holdings").and_then(|v| v.as_array())
+        .or_else(|| data.as_array());
+
+    let Some(holdings) = arr else { return };
+
+    summary.num_holdings = holdings.len();
+
+    // Collect top holdings by allocationInPercentage
+    let mut rows: Vec<HoldingRow> = holdings
+        .iter()
+        .filter_map(parse_holding_row)
+        .collect();
+
+    rows.sort_by(|a, b| b.allocation_pct.partial_cmp(&a.allocation_pct).unwrap_or(std::cmp::Ordering::Equal));
+    rows.truncate(5);
+    summary.top_holdings = rows;
+}
+
+fn extract_performance(data: &serde_json::Value, summary: &mut PortfolioSummary) {
+    // v2 performance returns { performance: { ... } }
+    let perf = data.get("performance").unwrap_or(data);
+
+    summary.total_value = perf.get("currentValueInBaseCurrency").and_then(|v| v.as_f64())
+        .or_else(|| perf.get("currentValue").and_then(|v| v.as_f64()));
+    summary.total_investment = perf.get("totalInvestment").and_then(|v| v.as_f64());
+    summary.net_performance = perf.get("netPerformanceWithCurrencyEffect").and_then(|v| v.as_f64())
+        .or_else(|| perf.get("netPerformance").and_then(|v| v.as_f64()));
+    summary.net_performance_pct = perf.get("netPerformancePercentageWithCurrencyEffect").and_then(|v| v.as_f64())
+        .or_else(|| perf.get("netPerformancePercentage").and_then(|v| v.as_f64()));
+
+    if let Some(currency) = perf.get("currency").and_then(|v| v.as_str()) {
+        summary.currency = currency.to_string();
+    }
+}
+
+fn parse_holding_row(h: &serde_json::Value) -> Option<HoldingRow> {
+    let name = h.get("name").and_then(|v| v.as_str())
+        .or_else(|| h.get("symbol").and_then(|v| v.as_str()))?;
+    let alloc = h.get("allocationInPercentage").and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    Some(HoldingRow {
+        name: name.to_string(),
+        allocation_pct: alloc * 100.0,
+    })
 }
 
 /// Truncate JSON to avoid blowing up the context window.

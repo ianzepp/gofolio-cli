@@ -2,6 +2,8 @@ mod agent;
 mod api;
 mod app;
 mod config;
+mod market;
+#[allow(dead_code)]
 mod markdown;
 mod theme;
 mod tools;

@@ -5,7 +5,6 @@ use ratatui::widgets::{Bar, BarChart, BarGroup, Block, Paragraph, Sparkline};
 use ratatui::Frame;
 
 use crate::app::{AppState, ChartData};
-use crate::markdown;
 use crate::theme;
 
 /// A renderable item in the chat panel — either text lines or an inline chart.
@@ -82,11 +81,15 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
             theme::WHITE
         };
 
-        // Render markdown with line wrapping
-        let mut msg_lines = markdown::render(&msg.text, content_width);
+        // Plain text with line wrapping
+        let mut msg_lines: Vec<Line<'static>> = msg.text
+            .lines()
+            .flat_map(|line| wrap_line(line, content_width, text_color))
+            .collect();
 
-        // Apply default text color
-        markdown::apply_default_color(&mut msg_lines, text_color);
+        if msg_lines.is_empty() {
+            msg_lines.push(Line::from(Span::styled("", Style::default().fg(text_color))));
+        }
 
         // Prepend role label to first line, indent continuation lines
         for (i, line) in msg_lines.iter_mut().enumerate() {
@@ -119,16 +122,41 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 
     // Scroll to bottom: figure out which items fit in the viewport
-    let mut total_rows: u16 = items.iter().map(|i| i.height()).sum();
-    let mut start_idx = 0;
-    while total_rows > total_height && start_idx < items.len() {
-        total_rows -= items[start_idx].height();
-        start_idx += 1;
+    // First, find the default start_idx (pinned to bottom)
+    let all_rows: u16 = items.iter().map(|i| i.height()).sum();
+    let mut bottom_start_idx = 0;
+    {
+        let mut rows = all_rows;
+        while rows > total_height && bottom_start_idx < items.len() {
+            rows -= items[bottom_start_idx].height();
+            bottom_start_idx += 1;
+        }
+    }
+
+    // Apply scroll offset: move start_idx backwards (towards top) by scroll_offset rows
+    let mut start_idx = bottom_start_idx;
+    let mut remaining_scroll = state.scroll_offset;
+    while remaining_scroll > 0 && start_idx > 0 {
+        start_idx -= 1;
+        let h = items[start_idx].height();
+        if h > remaining_scroll {
+            remaining_scroll = 0;
+        } else {
+            remaining_scroll -= h;
+        }
+    }
+
+    // Figure out which items fit from start_idx forward
+    let mut end_idx = start_idx;
+    let mut visible_rows: u16 = 0;
+    while end_idx < items.len() && visible_rows + items[end_idx].height() <= total_height {
+        visible_rows += items[end_idx].height();
+        end_idx += 1;
     }
 
     // Render visible items top-down
     let mut y = area.y;
-    for item in &items[start_idx..] {
+    for item in &items[start_idx..end_idx] {
         let h = item.height().min(area.y + area.height - y);
         if h == 0 {
             break;
@@ -192,4 +220,38 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
 
         y += h;
     }
+
+    // Scroll indicator when not at bottom
+    if state.scroll_offset > 0 && area.height > 0 {
+        let indicator = Line::from(vec![
+            Span::styled(
+                " \u{2193} more below (End to jump) ",
+                Style::default()
+                    .fg(theme::AMBER)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]);
+        let indicator_area = Rect::new(area.x, area.y + area.height - 1, area.width, 1);
+        frame.render_widget(Paragraph::new(vec![indicator]), indicator_area);
+    }
+}
+
+fn wrap_line(line: &str, max_width: usize, color: ratatui::style::Color) -> Vec<Line<'static>> {
+    if line.len() <= max_width {
+        return vec![Line::from(Span::styled(line.to_string(), Style::default().fg(color)))];
+    }
+
+    let mut wrapped = Vec::new();
+    let mut remaining = line;
+    while remaining.len() > max_width {
+        let split = remaining[..max_width]
+            .rfind(' ')
+            .unwrap_or(max_width);
+        wrapped.push(Line::from(Span::styled(remaining[..split].to_string(), Style::default().fg(color))));
+        remaining = remaining[split..].trim_start();
+    }
+    if !remaining.is_empty() {
+        wrapped.push(Line::from(Span::styled(remaining.to_string(), Style::default().fg(color))));
+    }
+    wrapped
 }

@@ -8,13 +8,13 @@ use crate::theme;
 
 pub fn render(frame: &mut Frame, area: Rect) {
     let shortcuts = vec![
-        ("N", "New Session"),
-        ("Y", "Thumbs Up"),
+        ("N", "New"),
+        ("Y", "Up"),
         ("R", "Report"),
         ("P", "Model"),
-        ("T", "Traits"),
         ("L", "Logout"),
         ("Q", "Quit"),
+        ("PgUp/Dn", "Scroll"),
     ];
 
     let mut spans = vec![
@@ -74,14 +74,6 @@ pub fn render_session_bar(frame: &mut Frame, area: Rect, state: &AppState) {
         .add_modifier(Modifier::BOLD);
     let dim = Style::default().fg(theme::MUTED).bg(theme::BORDER);
 
-    if state.turn_count == 0 {
-        // No session — just fill with the amber bar
-        let fill = " ".repeat(width);
-        let line = Line::from(Span::styled(fill, style));
-        frame.render_widget(line, area);
-        return;
-    }
-
     let model_name = state
         .model
         .split('/')
@@ -90,19 +82,14 @@ pub fn render_session_bar(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let sep = Span::styled(" \u{00B7} ", dim);
 
-    // Left: model, turn, steps
-    let feedback = match state.feedback {
-        Some(1) => "\u{2191}",
-        Some(-1) => "\u{2193}",
-        _ => "-",
-    };
-
     let left_spans = vec![
         Span::styled(format!(" {}", model_name), style),
         sep.clone(),
         Span::styled(format!("Turn {}", state.turn_count), style),
         sep.clone(),
         Span::styled(format!("Steps {}", state.total_steps), style),
+        sep.clone(),
+        Span::styled(format!("Tools {}", state.total_tool_calls), style),
     ];
     // Context meter — based on last API call's input tokens (actual context window usage)
     let max_context: u64 = 200_000;
@@ -135,8 +122,6 @@ pub fn render_session_bar(frame: &mut Frame, area: Rect, state: &AppState) {
         ),
         sep.clone(),
         Span::styled(format!("{}ms", state.latency_ms), style),
-        sep.clone(),
-        Span::styled(format!("{} ", feedback), style),
         sep.clone(),
         Span::styled(
             format!("{} {:.0}%", ctx_bar, pct),

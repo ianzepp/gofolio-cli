@@ -26,17 +26,18 @@ pub fn render(frame: &mut Frame, state: &AppState) {
     // 1-char padding around the content area
     let content_area = vertical[2].inner(Margin::new(1, 1));
 
-    // Horizontal: chat(fill) + sidebar(SIDEBAR_WIDTH)
+    // Horizontal: chat(fill) + gap(2) + sidebar(SIDEBAR_WIDTH)
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Min(20),
+            Constraint::Length(2),
             Constraint::Length(theme::SIDEBAR_WIDTH),
         ])
         .split(content_area);
 
     chat::render(frame, horizontal[0], state);
-    sidebar::render(frame, horizontal[1], state);
+    sidebar::render(frame, horizontal[2], state);
     status::render_session_bar(frame, vertical[3], state);
     input::render(frame, vertical[4], state);
 

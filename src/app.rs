@@ -11,9 +11,10 @@ use crate::agent::types::{Content, Message, ToolCallRecord};
 use crate::agent::{self, AgentEvent};
 use crate::api::GhostfolioClient;
 use crate::config::Config;
+use crate::market::{self, MarketQuote};
 use crate::ui::login::{LoginField, LoginState};
 use crate::ui::modal::ModalState;
-use crate::warmup;
+use crate::warmup::{self, PortfolioSummary};
 
 #[derive(Debug, Clone)]
 pub enum ChartData {
@@ -54,11 +55,15 @@ pub struct AppState {
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
     pub total_steps: usize,
+    pub total_tool_calls: usize,
     pub latency_ms: u64,
     pub last_input_tokens: u64,
     pub feedback: Option<i8>, // 1 = thumbs up, -1 = thumbs down
+    pub scroll_offset: u16,   // 0 = at bottom, >0 = scrolled up by N rows
     pub modal: Option<ModalState>,
     pub available_models: Vec<ModelEntry>,
+    pub market_quotes: Vec<MarketQuote>,
+    pub portfolio: Option<PortfolioSummary>,
 
     // Internal state
     config: Config,
@@ -67,6 +72,7 @@ pub struct AppState {
     agent_rx: Option<mpsc::UnboundedReceiver<AgentEvent>>,
     request_start: Option<Instant>,
     warmup_rx: Option<tokio::sync::oneshot::Receiver<warmup::WarmupData>>,
+    market_rx: Option<mpsc::UnboundedReceiver<Vec<MarketQuote>>>,
 }
 
 impl AppState {
@@ -97,17 +103,22 @@ impl AppState {
             total_input_tokens: 0,
             total_output_tokens: 0,
             total_steps: 0,
+            total_tool_calls: 0,
             latency_ms: 0,
             last_input_tokens: 0,
             feedback: None,
+            scroll_offset: 0,
             modal: None,
             available_models: Vec::new(),
+            market_quotes: Vec::new(),
+            portfolio: None,
             config,
             api_client: None,
             history: Vec::new(),
             agent_rx: None,
             request_start: None,
             warmup_rx: None,
+            market_rx: None,
         }
     }
 
@@ -137,6 +148,7 @@ impl AppState {
         self.total_input_tokens = 0;
         self.total_output_tokens = 0;
         self.total_steps = 0;
+        self.total_tool_calls = 0;
         self.latency_ms = 0;
         self.last_input_tokens = 0;
         self.feedback = None;
@@ -164,8 +176,9 @@ impl AppState {
             }
             "/help" | "/?" => {
                 self.push_system(
-                    "Keys: ^N (new session), ^Y (thumbs up), ^R (report), ^P (model), ^T (traits), ^L (logout), ^Q (quit)\n\
-                     Slash: /new, /up, /report, /model, /traits, /logout, /quit, /help",
+                    "Keys: ^N (new session), ^Y (thumbs up), ^R (report), ^P (model), ^L (logout), ^Q (quit)\n\
+                     Scroll: PgUp/PgDn, Shift+Up/Down, Home/End\n\
+                     Slash: /new, /up, /report, /model, /logout, /quit, /help",
                 );
                 return;
             }
@@ -211,6 +224,7 @@ impl AppState {
 
         self.tool_calls.clear();
         self.feedback = None;
+        self.scroll_offset = 0;
         self.loading = true;
         self.request_start = Some(Instant::now());
 
@@ -243,6 +257,7 @@ impl AppState {
         match event {
             AgentEvent::ToolCall(tc) => {
                 self.tool_calls.push(tc);
+                self.total_tool_calls += 1;
             }
             AgentEvent::ChartData(data) => {
                 let chart = parse_chart_data(&data);
@@ -263,6 +278,7 @@ impl AppState {
                 steps,
             } => {
                 self.loading = false;
+                self.scroll_offset = 0;
                 self.turn_count += 1;
                 self.total_input_tokens += input_tokens;
                 self.total_output_tokens += output_tokens;
@@ -377,6 +393,11 @@ pub async fn run() -> io::Result<()> {
 async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
     let mut state = AppState::new();
 
+    // Start market data feed (no auth needed)
+    let (market_tx, market_rx) = mpsc::unbounded_channel();
+    state.market_rx = Some(market_rx);
+    market::spawn_market_feed(market_tx);
+
     // Try auto-auth if we have a token
     if matches!(
         state.screen,
@@ -399,6 +420,7 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
         // Check warmup channel
         if let Some(ref mut rx) = state.warmup_rx {
             if let Ok(data) = rx.try_recv() {
+                state.portfolio = Some(data.portfolio);
                 if !data.context.is_empty() {
                     // Inject as a prefilled user→assistant exchange so the LLM has context
                     state.history.push(Message {
@@ -416,6 +438,13 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
                     state.push_system("Ready. Type a message to begin.");
                 }
                 state.warmup_rx = None;
+            }
+        }
+
+        // Check market feed channel
+        if let Some(ref mut rx) = state.market_rx {
+            if let Ok(quotes) = rx.try_recv() {
+                state.market_quotes = quotes;
             }
         }
 
@@ -566,6 +595,25 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
                         KeyCode::Enter => state.submit_message(),
                         KeyCode::Backspace => {
                             state.input.pop();
+                        }
+                        KeyCode::PageUp => {
+                            state.scroll_offset = state.scroll_offset.saturating_add(10);
+                        }
+                        KeyCode::PageDown => {
+                            state.scroll_offset = state.scroll_offset.saturating_sub(10);
+                        }
+                        KeyCode::Home => {
+                            // Scroll to top — use a large value; render will clamp
+                            state.scroll_offset = u16::MAX;
+                        }
+                        KeyCode::End => {
+                            state.scroll_offset = 0;
+                        }
+                        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                            state.scroll_offset = state.scroll_offset.saturating_add(1);
+                        }
+                        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                            state.scroll_offset = state.scroll_offset.saturating_sub(1);
                         }
                         KeyCode::Char(c) => state.input.push(c),
                         _ => {}
