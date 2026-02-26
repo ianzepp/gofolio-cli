@@ -1,21 +1,107 @@
 # Ghostfolio CLI (Rust)
 
-This crate contains the Rust TUI/agent CLI implementation.
+`cli/` is the Rust application for Ghostfolio's terminal UI and agent runtime.
 
-## Commands
+## What It Includes
 
-Build and run the app:
+- Interactive terminal UI (`ghostfolio` / `ghostfolio chat`)
+- Agent orchestration + tool calls
+- Config management (`ghostfolio config`)
+- Eval runner (`ghostfolio evals`)
+- Unit tests and coverage for Rust code
+
+## Prerequisites
+
+- Rust toolchain (`cargo`, `rustc`)
+- Ghostfolio API reachable (default `http://localhost:3333`)
+- API token and model provider keys configured
+
+## Quick Start
 
 ```bash
 cd cli
 cargo run
 ```
 
-## Testing
+The default command opens chat mode.
 
-### Rust unit tests (code tests)
+## CLI Commands
 
-These run Rust unit tests (`*_test.rs`) for CLI code.
+### `chat` (default)
+
+Start the interactive UI:
+
+```bash
+cargo run -- chat
+# or simply
+cargo run
+```
+
+### `config`
+
+Show current config:
+
+```bash
+cargo run -- config
+```
+
+Set config values:
+
+```bash
+cargo run -- config ghostfolio_url=http://localhost:3333
+cargo run -- config access_token=YOUR_TOKEN
+cargo run -- config anthropic_api_key=YOUR_KEY
+cargo run -- config openrouter_api_key=YOUR_KEY
+cargo run -- config openai_api_key=YOUR_KEY
+cargo run -- config model=openai/gpt-4o-mini
+cargo run -- config llm_provider=openrouter
+```
+
+### `evals`
+
+Run eval suites against the in-process CLI agent:
+
+```bash
+cargo run -- evals --suite quick
+```
+
+List suites:
+
+```bash
+cargo run -- evals --list-suites
+```
+
+Multi-model run:
+
+```bash
+cargo run -- evals --suite quick --models openai/gpt-4o-mini,claude-sonnet-4-6 --parallel --max-parallel 4
+```
+
+Live API mode (instead of fixtures):
+
+```bash
+cargo run -- evals --suite quick --live --model openai/gpt-4o-mini
+```
+
+Eval corpus details: [evals/README.md](./evals/README.md)
+
+## Config and Provider Caches
+
+Config file path:
+
+- `~/.config/ghostfolio-cli/config.json`
+
+Provider model caches:
+
+- `~/.config/ghostfolio-cli/providers/*.json`
+
+These cached provider lists are used for model selection workflows.
+
+## Rust Testing
+
+### Unit tests
+
+All unit tests live in `*_test.rs` files.
 
 ```bash
 cd cli
@@ -28,29 +114,13 @@ Run a subset:
 cargo test tools::calculator
 ```
 
-Coverage:
+### Coverage
 
 ```bash
 cargo llvm-cov --summary-only
 ```
 
-### Evals (agent behavior tests)
+## Distinction: `cargo test` vs `ghostfolio evals`
 
-The CLI subcommand named `test` runs eval suites, not Rust unit tests.
-
-```bash
-cd cli
-cargo run -- test --suite quick
-```
-
-Direct binary form:
-
-```bash
-ghostfolio test --suite quick
-```
-
-For eval fixture/suite details, see [evals/README.md](./evals/README.md).
-
-## Naming note
-
-`test` is currently the eval subcommand name. Renaming it to `evals` would reduce confusion with Rust `cargo test`.
+- `cargo test`: Rust unit tests for implementation code
+- `ghostfolio evals`: scenario/golden-set behavioral evaluation harness

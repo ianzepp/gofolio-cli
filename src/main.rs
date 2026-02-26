@@ -29,7 +29,7 @@ enum Command {
     /// Start the interactive TUI (default)
     Chat,
     /// Run eval suites against the in-process CLI agent
-    Test {
+    Evals {
         /// Suite id from evals/suites.yaml
         #[arg(long, default_value = "quick")]
         suite: String,
@@ -45,7 +45,7 @@ enum Command {
         /// LLM provider override (anthropic|openrouter|openai)
         #[arg(long)]
         provider: Option<String>,
-        /// Evals root path (auto-detected from evals/, cli/evals/, or gauntlet/evals/)
+        /// Evals root path (auto-detected from evals/ or cli/evals/)
         #[arg(long)]
         evals_root: Option<String>,
         /// Fixture directory for mock mode (defaults to evals/fixtures/moderate-portfolio)
@@ -85,7 +85,7 @@ async fn main() {
                 std::process::exit(1);
             }
         }
-        Command::Test {
+        Command::Evals {
             suite,
             case_ids,
             model,

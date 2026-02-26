@@ -395,8 +395,6 @@ fn resolve_evals_root(explicit: Option<PathBuf>) -> Result<PathBuf, String> {
     let candidates = [
         PathBuf::from("evals"),
         PathBuf::from("cli/evals"),
-        PathBuf::from("gauntlet/evals"),
-        PathBuf::from("../gauntlet/evals"),
     ];
     for candidate in candidates {
         if candidate.is_dir() {
