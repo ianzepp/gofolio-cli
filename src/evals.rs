@@ -12,6 +12,7 @@ use crate::agent;
 use crate::agent::client::{self, LlmClient, Provider, provider_from_id};
 use crate::agent::types::Message;
 use crate::config::Config;
+use crate::langsmith::LangSmithConfig;
 use crate::tools::{MockFixtureSet, ToolDispatcher};
 
 #[derive(Debug, Clone)]
@@ -122,6 +123,8 @@ struct ToolCallRun {
 pub async fn run(args: TestArgs) -> Result<(), String> {
     let evals_root = resolve_evals_root(args.evals_root)?;
     let suites = load_suites(&evals_root)?;
+    let runtime_cfg = Config::load();
+    let langsmith = LangSmithConfig::from_config(&runtime_cfg);
 
     if args.list_suites {
         println!("Suites:");
@@ -161,8 +164,7 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
     let run_started = Instant::now();
     let run_id = format!("rust-{}", Utc::now().format("%Y%m%d-%H%M%S"));
     let dispatcher = if args.live {
-        let cfg = Config::load();
-        let (jwt, base_url) = crate::api::auth::authenticate(&cfg)
+        let (jwt, base_url) = crate::api::auth::authenticate(&runtime_cfg)
             .await
             .map_err(|e| format!("live auth failed: {e}"))?;
         ToolDispatcher::Live(crate::api::GhostfolioClient::new(base_url, jwt))
@@ -197,8 +199,15 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
             target.provider.label(),
             target.model
         );
-        let mut model_results =
-            run_cases_for_target(&cases, target, &dispatcher, args.parallel, max_parallel).await?;
+        let mut model_results = run_cases_for_target(
+            &cases,
+            target,
+            &dispatcher,
+            args.parallel,
+            max_parallel,
+            langsmith.as_ref(),
+        )
+        .await?;
         results.append(&mut model_results);
     }
 
@@ -536,12 +545,20 @@ async fn run_cases_for_target(
     dispatcher: &ToolDispatcher,
     parallel: bool,
     max_parallel: usize,
+    langsmith: Option<&LangSmithConfig>,
 ) -> Result<Vec<EvalResult>, String> {
     let mut results = Vec::with_capacity(cases.len());
     if !parallel {
         for eval_case in cases {
             let started = Instant::now();
-            let result = run_case(&target.client, &target.model, dispatcher, eval_case).await;
+            let result = run_case(
+                &target.client,
+                &target.model,
+                dispatcher,
+                eval_case,
+                langsmith,
+            )
+            .await;
             let elapsed_ms = started.elapsed().as_millis() as u64;
             results.push(build_eval_result(
                 (*eval_case).clone(),
@@ -563,9 +580,17 @@ async fn run_cases_for_target(
             let llm_client = target.client.clone();
             let model = target.model.clone();
             let dispatcher = dispatcher.clone();
+            let langsmith = langsmith.cloned();
             join_set.spawn(async move {
                 let started = Instant::now();
-                let result = run_case(&llm_client, &model, &dispatcher, &eval_case).await;
+                let result = run_case(
+                    &llm_client,
+                    &model,
+                    &dispatcher,
+                    &eval_case,
+                    langsmith.as_ref(),
+                )
+                .await;
                 (
                     eval_case,
                     model,
@@ -589,13 +614,14 @@ async fn run_case(
     model: &str,
     dispatcher: &ToolDispatcher,
     eval_case: &EvalCase,
+    langsmith: Option<&LangSmithConfig>,
 ) -> Result<AgentCaseRun, String> {
     let messages = vec![Message {
         role: "user".to_string(),
         content: crate::agent::types::Content::Text(eval_case.query.clone()),
     }];
     let started = Instant::now();
-    let result = agent::run_with_dispatcher(llm_client, model, messages, dispatcher, None)
+    let result = agent::run_with_dispatcher(llm_client, model, messages, dispatcher, langsmith)
         .await
         .map_err(|e| e.to_string())?;
 
