@@ -9,14 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent;
 use crate::agent::client::{self, LlmClient, Provider, provider_from_id};
-use crate::agent::types::{AgentError, Content, ContentBlock, Message};
+use crate::agent::types::Message;
 use crate::config::Config;
-use crate::text::truncate_utf8;
 use crate::tools::{MockFixtureSet, ToolDispatcher};
-
-const MAX_TOOL_ROUNDS: usize = 20;
-const MAX_TOKENS: u32 = 4096;
-const SYSTEM_PROMPT: &str = include_str!("agent/system.md");
 
 #[derive(Debug, Clone)]
 pub struct TestArgs {
@@ -372,126 +367,43 @@ async fn run_case(
     dispatcher: &ToolDispatcher,
     eval_case: &EvalCase,
 ) -> Result<AgentCaseRun, String> {
-    let mut messages = vec![Message {
+    let messages = vec![Message {
         role: "user".to_string(),
-        content: Content::Text(eval_case.query.clone()),
+        content: crate::agent::types::Content::Text(eval_case.query.clone()),
     }];
-    let tools = agent::tools::all_tools();
-
-    let mut total_input_tokens = 0_u64;
-    let mut total_output_tokens = 0_u64;
-    let mut tools_called = Vec::new();
-    let mut steps = Vec::new();
     let started = Instant::now();
+    let result = agent::run_with_dispatcher(llm_client, model, messages, dispatcher, None)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    for round in 0..MAX_TOOL_ROUNDS {
-        let step_started = Instant::now();
-        let response = llm_client
-            .chat(model, MAX_TOKENS, SYSTEM_PROMPT, &messages, Some(&tools))
-            .await
-            .map_err(|e| e.to_string())?;
-
-        total_input_tokens += response.input_tokens;
-        total_output_tokens += response.output_tokens;
-
-        if response.stop_reason == "end_turn" || response.stop_reason == "max_tokens" {
-            steps.push(StepRun {
-                step_number: round + 1,
-                duration_ms: step_started.elapsed().as_millis() as u64,
-                tokens_in: response.input_tokens,
-                tokens_out: response.output_tokens,
-                tool_calls: Vec::new(),
-            });
-            let text = extract_text(&response.content);
-            return Ok(AgentCaseRun {
-                response: text,
-                tools_called,
-                steps,
-                verified: !messages.is_empty() && messages.iter().any(has_tool_results),
-                duration_ms: started.elapsed().as_millis() as u64,
-                input_tokens: total_input_tokens,
-                output_tokens: total_output_tokens,
-            });
-        }
-
-        if response.stop_reason == "tool_use" {
-            messages.push(Message {
-                role: "assistant".to_string(),
-                content: Content::Blocks(response.content.clone()),
-            });
-
-            let mut tool_results = Vec::new();
-            let mut step_tool_calls = Vec::new();
-            for block in &response.content {
-                let ContentBlock::ToolUse { id, name, input } = block else {
-                    continue;
-                };
-
-                tools_called.push(name.clone());
-                let tool_started = Instant::now();
-                let result = dispatcher.dispatch(name, input).await;
-                let tool_duration_ms = tool_started.elapsed().as_millis() as u64;
-                let (content, is_error) = match result {
-                    Ok(data) => {
-                        let s = data.to_string();
-                        if s.len() > 4000 {
-                            (format!("{}... (truncated)", truncate_utf8(&s, 4000)), false)
-                        } else {
-                            (s, false)
-                        }
-                    }
-                    Err(e) => (format!("error: {e}"), true),
-                };
-                step_tool_calls.push(ToolCallRun {
-                    tool: name.clone(),
-                    duration_ms: tool_duration_ms,
-                });
-
-                tool_results.push(ContentBlock::ToolResult {
-                    tool_use_id: id.clone(),
-                    content,
-                    is_error: Some(is_error),
-                });
-            }
-
-            messages.push(Message {
-                role: "user".to_string(),
-                content: Content::Blocks(tool_results),
-            });
-            steps.push(StepRun {
-                step_number: round + 1,
-                duration_ms: step_started.elapsed().as_millis() as u64,
-                tokens_in: response.input_tokens,
-                tokens_out: response.output_tokens,
-                tool_calls: step_tool_calls,
-            });
-            continue;
-        }
-
-        return Err(format!("unexpected stop reason: {}", response.stop_reason));
-    }
-
-    Err(AgentError::MaxRounds(MAX_TOOL_ROUNDS).to_string())
-}
-
-fn extract_text(blocks: &[ContentBlock]) -> String {
-    blocks
-        .iter()
-        .filter_map(|b| match b {
-            ContentBlock::Text { text } => Some(text.as_str()),
-            _ => None,
+    let steps = result
+        .steps
+        .into_iter()
+        .map(|s| StepRun {
+            step_number: s.step_number,
+            duration_ms: s.duration_ms,
+            tokens_in: s.input_tokens,
+            tokens_out: s.output_tokens,
+            tool_calls: s
+                .tool_calls
+                .into_iter()
+                .map(|tc| ToolCallRun {
+                    tool: tc.name,
+                    duration_ms: tc.duration_ms,
+                })
+                .collect(),
         })
-        .collect::<Vec<_>>()
-        .join("")
-}
+        .collect();
 
-fn has_tool_results(message: &Message) -> bool {
-    if let Content::Blocks(blocks) = &message.content {
-        return blocks
-            .iter()
-            .any(|block| matches!(block, ContentBlock::ToolResult { .. }));
-    }
-    false
+    Ok(AgentCaseRun {
+        response: result.text,
+        tools_called: result.tool_calls.into_iter().map(|tc| tc.name).collect(),
+        steps,
+        verified: result.verified,
+        duration_ms: started.elapsed().as_millis() as u64,
+        input_tokens: result.input_tokens,
+        output_tokens: result.output_tokens,
+    })
 }
 
 #[derive(Debug)]

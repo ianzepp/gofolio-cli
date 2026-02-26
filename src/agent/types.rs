@@ -72,9 +72,32 @@ pub struct ChatResponse {
 }
 
 /// A record of a tool call for UI display.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ToolCallRecord {
     pub name: String,
     pub duration_ms: u64,
     pub success: bool,
+}
+
+/// A single agent loop step (one LLM call, optionally with tool calls).
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentStepRecord {
+    pub step_number: usize,
+    pub duration_ms: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub tool_calls: Vec<ToolCallRecord>,
+}
+
+/// Full result of one agent run over a user query.
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentRunResult {
+    pub text: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub last_input_tokens: u64,
+    pub steps: Vec<AgentStepRecord>,
+    pub tool_calls: Vec<ToolCallRecord>,
+    pub chart_data: Vec<serde_json::Value>,
+    pub verified: bool,
 }
