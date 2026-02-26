@@ -1,5 +1,5 @@
-use ratatui::layout::{Constraint, Direction, Layout, Margin, Rect};
 use ratatui::Frame;
+use ratatui::layout::{Constraint, Direction, Layout, Margin, Rect};
 
 use super::{chat, input, sidebar, status};
 use crate::app::AppState;
@@ -14,7 +14,7 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         .constraints([
             Constraint::Length(1), // status bar (keyboard shortcuts)
             Constraint::Length(1), // header bar
-            Constraint::Min(4),   // content area
+            Constraint::Min(4),    // content area
             Constraint::Length(1), // session bar
             Constraint::Length(3), // input bar
         ])

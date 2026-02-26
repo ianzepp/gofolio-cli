@@ -1,7 +1,7 @@
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::Frame;
 
 use crate::app::AppState;
 use crate::theme;
@@ -74,11 +74,7 @@ pub fn render_session_bar(frame: &mut Frame, area: Rect, state: &AppState) {
         .add_modifier(Modifier::BOLD);
     let dim = Style::default().fg(theme::MUTED).bg(theme::BORDER);
 
-    let model_name = state
-        .model
-        .split('/')
-        .next_back()
-        .unwrap_or(&state.model);
+    let model_name = state.model.split('/').next_back().unwrap_or(&state.model);
 
     let sep = Span::styled(" \u{00B7} ", dim);
 

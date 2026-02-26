@@ -1,8 +1,8 @@
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
-use ratatui::Frame;
 
 use crate::theme;
 
@@ -29,8 +29,7 @@ impl ModalState {
             .iter()
             .enumerate()
             .filter(|(_, item)| {
-                self.filter.is_empty()
-                    || item.to_lowercase().contains(&self.filter.to_lowercase())
+                self.filter.is_empty() || item.to_lowercase().contains(&self.filter.to_lowercase())
             })
             .collect()
     }

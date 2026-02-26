@@ -1,8 +1,8 @@
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
-use ratatui::Frame;
 
 use crate::theme;
 
@@ -71,7 +71,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &LoginState) {
 
     // URL field
     let url_label_style = if state.focus == LoginField::Url {
-        Style::default().fg(theme::AMBER).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(theme::AMBER)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(theme::MUTED)
     };
@@ -97,7 +99,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &LoginState) {
 
     // Token field
     let token_label_style = if state.focus == LoginField::Token {
-        Style::default().fg(theme::AMBER).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(theme::AMBER)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(theme::MUTED)
     };

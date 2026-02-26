@@ -1,8 +1,8 @@
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Bar, BarChart, BarGroup, Block, Paragraph, Sparkline};
-use ratatui::Frame;
 
 use crate::app::{AppState, ChartData};
 use crate::markdown;
@@ -95,7 +95,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
         };
 
         if msg_lines.is_empty() {
-            msg_lines.push(Line::from(Span::styled("", Style::default().fg(text_color))));
+            msg_lines.push(Line::from(Span::styled(
+                "",
+                Style::default().fg(text_color),
+            )));
         }
 
         // Prepend role label to first line, indent continuation lines
@@ -168,7 +171,12 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
         if h == 0 {
             break;
         }
-        let item_area = Rect::new(area.x + prefix_width as u16, y, area.width - prefix_width as u16, h);
+        let item_area = Rect::new(
+            area.x + prefix_width as u16,
+            y,
+            area.width - prefix_width as u16,
+            h,
+        );
 
         match item {
             ChatItem::Lines(lines) => {
@@ -230,14 +238,12 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
 
     // Scroll indicator when not at bottom
     if state.scroll_offset > 0 && area.height > 0 {
-        let indicator = Line::from(vec![
-            Span::styled(
-                " \u{2193} more below (End to jump) ",
-                Style::default()
-                    .fg(theme::AMBER)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]);
+        let indicator = Line::from(vec![Span::styled(
+            " \u{2193} more below (End to jump) ",
+            Style::default()
+                .fg(theme::AMBER)
+                .add_modifier(Modifier::BOLD),
+        )]);
         let indicator_area = Rect::new(area.x, area.y + area.height - 1, area.width, 1);
         frame.render_widget(Paragraph::new(vec![indicator]), indicator_area);
     }
@@ -245,20 +251,27 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
 
 fn wrap_line(line: &str, max_width: usize, color: ratatui::style::Color) -> Vec<Line<'static>> {
     if line.len() <= max_width {
-        return vec![Line::from(Span::styled(line.to_string(), Style::default().fg(color)))];
+        return vec![Line::from(Span::styled(
+            line.to_string(),
+            Style::default().fg(color),
+        ))];
     }
 
     let mut wrapped = Vec::new();
     let mut remaining = line;
     while remaining.len() > max_width {
-        let split = remaining[..max_width]
-            .rfind(' ')
-            .unwrap_or(max_width);
-        wrapped.push(Line::from(Span::styled(remaining[..split].to_string(), Style::default().fg(color))));
+        let split = remaining[..max_width].rfind(' ').unwrap_or(max_width);
+        wrapped.push(Line::from(Span::styled(
+            remaining[..split].to_string(),
+            Style::default().fg(color),
+        )));
         remaining = remaining[split..].trim_start();
     }
     if !remaining.is_empty() {
-        wrapped.push(Line::from(Span::styled(remaining.to_string(), Style::default().fg(color))));
+        wrapped.push(Line::from(Span::styled(
+            remaining.to_string(),
+            Style::default().fg(color),
+        )));
     }
     wrapped
 }
