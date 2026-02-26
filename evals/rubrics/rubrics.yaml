@@ -1,0 +1,44 @@
+version: '1.0'
+
+dimensions:
+  relevance:
+    weight: 0.25
+    description: 'Does the response address the question?'
+    scale:
+      5: 'Directly and completely addresses the question'
+      3: 'Main point covered but includes unnecessary information'
+      1: 'Barely related to the question'
+      0: 'Off-topic or refuses to answer'
+
+  accuracy:
+    weight: 0.35
+    description: 'Are the facts correct and verifiable from tool results?'
+    scale:
+      5: 'All facts correct, consistent with tool-returned data'
+      3: 'Mostly correct, minor imprecisions'
+      1: 'Significant factual errors'
+      0: 'Completely wrong or fabricated data'
+
+  completeness:
+    weight: 0.25
+    description: 'Does the response fully answer all parts of the question?'
+    scale:
+      5: 'Comprehensive — all aspects covered'
+      3: 'Key points covered, some details missing'
+      1: 'Minimal answer with major gaps'
+      0: 'No substantive information provided'
+
+  clarity:
+    weight: 0.15
+    description: 'Is the response well-organized and appropriately concise?'
+    scale:
+      5: 'Crystal clear, well-structured, appropriate length'
+      3: 'Understandable but could be better organized'
+      1: 'Difficult to follow'
+      0: 'Incomprehensible'
+
+thresholds:
+  excellent: 4.5
+  good: 3.5
+  acceptable: 2.5
+  poor: 1.5

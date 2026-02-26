@@ -1,0 +1,10 @@
+- id: 'hist-001'
+  description: 'Price history request'
+  query: 'Show me the price history of AAPL for the last 30 days'
+  category: 'history'
+  difficulty: 'straightforward'
+  expected_tools: ['price_history']
+  must_contain: ['AAPL']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'history']

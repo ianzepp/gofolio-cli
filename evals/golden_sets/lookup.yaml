@@ -1,0 +1,21 @@
+- id: 'sym-001'
+  description: 'Search for a company by name'
+  query: 'Look up the ticker symbol for Tesla'
+  category: 'lookup'
+  difficulty: 'straightforward'
+  expected_tools: ['symbol_lookup']
+  must_contain: ['TSLA']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'lookup']
+
+- id: 'sym-002'
+  description: 'Search for an ETF'
+  query: 'Find the symbol for Vanguard S&P 500 ETF'
+  category: 'lookup'
+  difficulty: 'straightforward'
+  expected_tools: ['symbol_lookup']
+  must_contain: ['VOO']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'lookup']

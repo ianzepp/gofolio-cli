@@ -1,0 +1,7 @@
+{
+  "benchmarks": [
+    { "symbol": "^GSPC", "name": "S&P 500", "marketPrice": 5225.4 },
+    { "symbol": "^IXIC", "name": "NASDAQ", "marketPrice": 18440.1 },
+    { "symbol": "^DJI", "name": "DOW", "marketPrice": 39110.7 }
+  ]
+}

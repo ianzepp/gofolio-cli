@@ -1,0 +1,43 @@
+- id: port-001
+  description: 'Account overview with seeded holdings'
+  query: 'What accounts do I have?'
+  category: 'portfolio'
+  difficulty: 'straightforward'
+  expected_tools: ['account_overview']
+  must_contain: ['Portfolio', 'USD']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['portfolio', 'account']
+
+- id: port-002
+  description: 'Holdings value check with market data'
+  query: 'What is my portfolio worth right now?'
+  category: 'portfolio'
+  difficulty: 'straightforward'
+  expected_tools: ['account_overview']
+  must_contain: ['$']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['portfolio', 'value']
+
+- id: port-003
+  description: 'Multi-tool portfolio analysis'
+  query: 'Show me my holdings and their current market prices'
+  category: 'portfolio'
+  difficulty: 'ambiguous'
+  expected_tools: ['account_overview', 'market_data']
+  must_contain: ['$']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['portfolio', 'multi-tool']
+
+- id: port-004
+  description: 'Portfolio with price history'
+  query: 'How have my stock positions performed over the last 3 months?'
+  category: 'portfolio'
+  difficulty: 'ambiguous'
+  expected_tools: ['account_overview']
+  must_contain: ['$']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['portfolio', 'history']

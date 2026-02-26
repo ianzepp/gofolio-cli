@@ -1,0 +1,13 @@
+{
+  "performance": {
+    "currentNetWorth": 500432.15,
+    "netPerformance": 38432.15,
+    "netPerformancePercentage": 8.32,
+    "annualizedPerformancePercent": 6.1
+  },
+  "chart": [
+    { "date": "2025-01-01", "netWorth": 461000.0 },
+    { "date": "2025-06-01", "netWorth": 478500.0 },
+    { "date": "2026-02-01", "netWorth": 500432.15 }
+  ]
+}

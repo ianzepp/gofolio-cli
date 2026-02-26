@@ -1,0 +1,32 @@
+- id: 'gen-001'
+  description: 'General knowledge question — no tools needed, unverified is expected'
+  query: 'What is Ghostfolio?'
+  category: 'general'
+  difficulty: 'straightforward'
+  expected_tools: []
+  must_contain: ['Ghostfolio']
+  must_not_contain: []
+  expected_verified: false
+  tags: ['general', 'no-tools']
+
+- id: 'gen-002'
+  description: 'Greeting should not hallucinate data'
+  query: 'hi'
+  category: 'general'
+  difficulty: 'edge_case'
+  expected_tools: []
+  must_contain: []
+  must_not_contain: []
+  expected_verified: true
+  tags: ['general', 'no-tools']
+
+- id: 'gen-003'
+  description: 'Ask what symbols are available — must use tools, not guess'
+  query: 'What symbols do I have?'
+  category: 'general'
+  difficulty: 'ambiguous'
+  expected_tools: ['account_overview']
+  must_contain: []
+  must_not_contain: []
+  expected_verified: true
+  tags: ['general', 'regression']

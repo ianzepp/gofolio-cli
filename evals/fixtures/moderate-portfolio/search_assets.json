@@ -1,0 +1,18 @@
+{
+  "Tesla": [
+    {
+      "symbol": "TSLA",
+      "name": "Tesla, Inc.",
+      "dataSource": "YAHOO",
+      "currency": "USD"
+    }
+  ],
+  "AAPL": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "dataSource": "YAHOO",
+      "currency": "USD"
+    }
+  ]
+}

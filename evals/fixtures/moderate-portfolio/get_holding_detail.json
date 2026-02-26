@@ -1,0 +1,20 @@
+{
+  "YAHOO:AAPL": {
+    "symbol": "AAPL",
+    "name": "Apple Inc.",
+    "quantity": 150,
+    "marketPrice": 198.45,
+    "averagePrice": 172.3,
+    "value": 29767.5,
+    "netPerformancePercent": 15.17
+  },
+  "YAHOO:MSFT": {
+    "symbol": "MSFT",
+    "name": "Microsoft Corporation",
+    "quantity": 80,
+    "marketPrice": 425.12,
+    "averagePrice": 388.5,
+    "value": 34009.6,
+    "netPerformancePercent": 9.42
+  }
+}

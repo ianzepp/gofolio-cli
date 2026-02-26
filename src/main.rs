@@ -30,7 +30,7 @@ enum Command {
     Chat,
     /// Run eval suites against the in-process CLI agent
     Test {
-        /// Suite id from gauntlet/evals/suites.yaml
+        /// Suite id from evals/suites.yaml
         #[arg(long, default_value = "quick")]
         suite: String,
         /// Comma-separated case ids to run (overrides suite case selection)
@@ -45,7 +45,7 @@ enum Command {
         /// LLM provider override (anthropic|openrouter|openai)
         #[arg(long)]
         provider: Option<String>,
-        /// Evals root path (auto-detected if omitted)
+        /// Evals root path (auto-detected from evals/, cli/evals/, or gauntlet/evals/)
         #[arg(long)]
         evals_root: Option<String>,
         /// Fixture directory for mock mode (defaults to evals/fixtures/moderate-portfolio)

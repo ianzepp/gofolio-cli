@@ -1,0 +1,25 @@
+{
+  "summary": {
+    "currentNetWorth": 500432.15,
+    "totalInvestment": 462000.0,
+    "netPerformance": 38432.15,
+    "netPerformancePercent": 8.32,
+    "cash": 12150.0
+  },
+  "holdings": {
+    "AAPL": {
+      "symbol": "AAPL",
+      "quantity": 150,
+      "marketPrice": 198.45,
+      "valueInBaseCurrency": 29767.5,
+      "allocationInPercentage": 5.95
+    },
+    "MSFT": {
+      "symbol": "MSFT",
+      "quantity": 80,
+      "marketPrice": 425.12,
+      "valueInBaseCurrency": 34009.6,
+      "allocationInPercentage": 6.8
+    }
+  }
+}

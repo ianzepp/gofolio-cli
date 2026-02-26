@@ -1,0 +1,46 @@
+# Stage 1 suites — run on every change, all must pass
+quick:
+  description: 'Fast smoke test — one case per tool category'
+  stage: golden_sets
+  fixture: moderate-portfolio
+  cases: [acct-001, mkt-001, fx-001, sym-001, prof-001, bench-001, hist-001]
+
+# Stage 2 suites — run on releases, coverage mapping
+multi-tool:
+  description: 'Multi-tool chain tests'
+  stage: scenarios
+  fixture: moderate-portfolio
+  cases: [multi-001, multi-002, multi-003, multi-004]
+
+adversarial:
+  description: 'Edge cases and prompt injection resistance'
+  stage: scenarios
+  fixture: moderate-portfolio
+  cases: [gen-001, adv-002]
+
+regression:
+  description: 'Regression tests from known bugs'
+  stage: scenarios
+  fixture: moderate-portfolio
+  cases: [gen-002, gen-003, fx-003, fx-004, multi-003, multi-004]
+
+portfolio:
+  description: 'Portfolio analysis with seeded holdings'
+  stage: scenarios
+  fixture: moderate-portfolio
+  cases: [port-001, port-002, port-003, port-004]
+  setup:
+    portfolio:
+      risk: moderate
+      size: 500000
+
+# Full suite — all stages
+comprehensive:
+  description: 'Complete test coverage across all stages'
+  stage: all
+  fixture: moderate-portfolio
+  cases: all
+  setup:
+    portfolio:
+      risk: moderate
+      size: 500000

@@ -1,0 +1,17 @@
+{
+  "totalValueInBaseCurrency": 500432.15,
+  "accounts": [
+    {
+      "id": "acct-main",
+      "name": "Main Brokerage",
+      "currency": "USD",
+      "valueInBaseCurrency": 425000.0
+    },
+    {
+      "id": "acct-crypto",
+      "name": "Crypto Wallet",
+      "currency": "USD",
+      "valueInBaseCurrency": 75432.15
+    }
+  ]
+}

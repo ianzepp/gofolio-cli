@@ -1,0 +1,14 @@
+{
+  "acct-main": [
+    {
+      "date": "2025-10-01",
+      "value": 401000.0,
+      "valueInBaseCurrency": 401000.0
+    },
+    { "date": "2026-02-01", "value": 425000.0, "valueInBaseCurrency": 425000.0 }
+  ],
+  "acct-crypto": [
+    { "date": "2025-10-01", "value": 64100.0, "valueInBaseCurrency": 64100.0 },
+    { "date": "2026-02-01", "value": 75432.15, "valueInBaseCurrency": 75432.15 }
+  ]
+}

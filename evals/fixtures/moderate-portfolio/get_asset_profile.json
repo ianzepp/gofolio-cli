@@ -1,0 +1,20 @@
+{
+  "YAHOO:AAPL": {
+    "assetProfile": {
+      "symbol": "AAPL",
+      "name": "Apple Inc.",
+      "currency": "USD",
+      "dataSource": "YAHOO",
+      "assetClass": "EQUITY"
+    }
+  },
+  "YAHOO:TSLA": {
+    "assetProfile": {
+      "symbol": "TSLA",
+      "name": "Tesla, Inc.",
+      "currency": "USD",
+      "dataSource": "YAHOO",
+      "assetClass": "EQUITY"
+    }
+  }
+}

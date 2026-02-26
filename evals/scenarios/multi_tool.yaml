@@ -1,0 +1,43 @@
+- id: 'multi-001'
+  description: 'Account overview then market data'
+  query: 'Show me my accounts and the current price of AAPL'
+  category: 'multi_tool'
+  difficulty: 'straightforward'
+  expected_tools: ['account_overview', 'market_data']
+  must_contain: ['account', 'AAPL']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['multi-tool']
+
+- id: 'multi-002'
+  description: 'Symbol lookup then asset profile'
+  query: 'Find the ticker for Tesla and then get its asset profile'
+  category: 'multi_tool'
+  difficulty: 'straightforward'
+  expected_tools: ['symbol_lookup', 'asset_profile']
+  must_contain: ['Tesla']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['multi-tool']
+
+- id: 'multi-003'
+  description: 'Price + currency conversion in one request'
+  query: 'How much is MSFT stock worth in GBP right now?'
+  category: 'multi_tool'
+  difficulty: 'ambiguous'
+  expected_tools: ['market_data', 'exchange_rate']
+  must_contain: ['MSFT', 'GBP']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['multi-tool', 'regression']
+
+- id: 'multi-004'
+  description: 'Price + multiple currency conversions'
+  query: 'Get me the price of GOOGL in EUR, GBP, and JPY'
+  category: 'multi_tool'
+  difficulty: 'ambiguous'
+  expected_tools: ['market_data', 'exchange_rate']
+  must_contain: ['GOOGL', 'EUR', 'GBP', 'JPY']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['multi-tool', 'regression']

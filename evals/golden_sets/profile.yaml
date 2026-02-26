@@ -1,0 +1,10 @@
+- id: 'prof-001'
+  description: 'Asset profile lookup'
+  query: 'Tell me about Apple stock - what sector is it in?'
+  category: 'profile'
+  difficulty: 'straightforward'
+  expected_tools: ['asset_profile']
+  must_contain: ['Apple']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'profile']

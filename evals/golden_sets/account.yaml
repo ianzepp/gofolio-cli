@@ -1,0 +1,21 @@
+- id: 'acct-001'
+  description: 'Basic account listing'
+  query: 'What accounts do I have?'
+  category: 'account'
+  difficulty: 'straightforward'
+  expected_tools: ['account_overview']
+  must_contain: ['account']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'account']
+
+- id: 'acct-002'
+  description: 'Account balance inquiry'
+  query: 'Show me my portfolio balance'
+  category: 'account'
+  difficulty: 'straightforward'
+  expected_tools: ['account_overview']
+  must_contain: ['balance']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'account']

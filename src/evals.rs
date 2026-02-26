@@ -393,6 +393,8 @@ fn resolve_evals_root(explicit: Option<PathBuf>) -> Result<PathBuf, String> {
         return Ok(path);
     }
     let candidates = [
+        PathBuf::from("evals"),
+        PathBuf::from("cli/evals"),
         PathBuf::from("gauntlet/evals"),
         PathBuf::from("../gauntlet/evals"),
     ];

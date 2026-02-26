@@ -1,0 +1,43 @@
+- id: 'fx-001'
+  description: 'Simple currency conversion'
+  query: 'Convert 100 USD to EUR'
+  category: 'exchange'
+  difficulty: 'straightforward'
+  expected_tools: ['exchange_rate']
+  must_contain: ['EUR']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'exchange']
+
+- id: 'fx-002'
+  description: 'Currency conversion with different pair'
+  query: 'How much is 500 GBP in JPY?'
+  category: 'exchange'
+  difficulty: 'straightforward'
+  expected_tools: ['exchange_rate']
+  must_contain: ['JPY']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'exchange']
+
+- id: 'fx-003'
+  description: 'Stock price in foreign currency requires market_data + exchange_rate'
+  query: 'What is the current price of AAPL in EUR?'
+  category: 'exchange'
+  difficulty: 'ambiguous'
+  expected_tools: ['market_data', 'exchange_rate']
+  must_contain: ['AAPL', 'EUR']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['multi-tool', 'exchange', 'regression']
+
+- id: 'fx-004'
+  description: 'Stock price in multiple foreign currencies'
+  query: 'What is the price of AAPL in EUR and JPY?'
+  category: 'exchange'
+  difficulty: 'ambiguous'
+  expected_tools: ['market_data', 'exchange_rate']
+  must_contain: ['AAPL', 'EUR', 'JPY']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['multi-tool', 'exchange', 'regression']

@@ -1,0 +1,21 @@
+- id: 'mkt-001'
+  description: 'Stock price query'
+  query: 'What is the current price of AAPL?'
+  category: 'market_data'
+  difficulty: 'straightforward'
+  expected_tools: ['market_data']
+  must_contain: ['AAPL']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'market']
+
+- id: 'mkt-002'
+  description: 'Multiple stock quotes'
+  query: 'Get me quotes for MSFT and GOOGL'
+  category: 'market_data'
+  difficulty: 'straightforward'
+  expected_tools: ['market_data']
+  must_contain: ['MSFT', 'GOOGL']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'market']
