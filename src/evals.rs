@@ -6,6 +6,7 @@ use std::time::Instant;
 use chrono::Utc;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
+use tokio::task::JoinSet;
 
 use crate::agent;
 use crate::agent::client::{self, LlmClient, Provider, provider_from_id};
@@ -22,6 +23,7 @@ pub struct TestArgs {
     pub evals_root: Option<PathBuf>,
     pub fixture_dir: Option<PathBuf>,
     pub live: bool,
+    pub parallel: bool,
     pub list_suites: bool,
 }
 
@@ -39,7 +41,7 @@ enum SuiteCases {
     List(Vec<String>),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct EvalCase {
     id: String,
     description: String,
@@ -168,76 +170,45 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
     };
 
     let mut results = Vec::with_capacity(cases.len());
-    for eval_case in &cases {
-        let started = Instant::now();
-        let result = run_case(&llm_client, &model, &dispatcher, eval_case).await;
-        let elapsed_ms = started.elapsed().as_millis() as u64;
-        match result {
-            Ok(run) => {
-                let grade = grade_case(eval_case, &run);
-                println!(
-                    "[{}] {} :: {} ({elapsed_ms}ms)",
-                    if grade.pass { "PASS" } else { "FAIL" },
-                    eval_case.id,
-                    eval_case.description
-                );
+    if args.parallel {
+        let mut join_set = JoinSet::new();
+        for eval_case in cases {
+            let eval_case = (*eval_case).clone();
+            let llm_client = llm_client.clone();
+            let model = model.clone();
+            let dispatcher = dispatcher.clone();
+            join_set.spawn(async move {
+                let started = Instant::now();
+                let result = run_case(&llm_client, &model, &dispatcher, &eval_case).await;
+                (
+                    eval_case,
+                    model,
+                    started.elapsed().as_millis() as u64,
+                    result,
+                )
+            });
+        }
 
-                results.push(EvalResult {
-                    case_id: eval_case.id.clone(),
-                    model: model.clone(),
-                    description: eval_case.description.clone(),
-                    query: eval_case.query.clone(),
-                    category: eval_case.category.clone(),
-                    difficulty: eval_case.difficulty.clone(),
-                    tags: eval_case.tags.clone(),
-                    pass: grade.pass,
-                    tier_a: grade.tier_a,
-                    tier_b: grade.tier_b,
-                    tier_c: grade.tier_c,
-                    detail_a: grade.detail_a,
-                    detail_b: grade.detail_b,
-                    detail_c: grade.detail_c,
-                    tools_called: run.tools_called,
-                    response: run.response,
-                    verified: run.verified,
-                    duration_ms: run.duration_ms,
-                    input_tokens: run.input_tokens,
-                    output_tokens: run.output_tokens,
-                    timestamp: Utc::now().to_rfc3339(),
-                    error: None,
-                    steps: run.steps,
-                });
-            }
-            Err(e) => {
-                println!("[ERROR] {} :: {} ({elapsed_ms}ms)", eval_case.id, e);
-                results.push(EvalResult {
-                    case_id: eval_case.id.clone(),
-                    model: model.clone(),
-                    description: eval_case.description.clone(),
-                    query: eval_case.query.clone(),
-                    category: eval_case.category.clone(),
-                    difficulty: eval_case.difficulty.clone(),
-                    tags: eval_case.tags.clone(),
-                    pass: false,
-                    tier_a: false,
-                    tier_b: false,
-                    tier_c: false,
-                    detail_a: "N/A".to_string(),
-                    detail_b: "N/A".to_string(),
-                    detail_c: "N/A".to_string(),
-                    tools_called: Vec::new(),
-                    response: String::new(),
-                    verified: false,
-                    duration_ms: elapsed_ms,
-                    input_tokens: 0,
-                    output_tokens: 0,
-                    timestamp: Utc::now().to_rfc3339(),
-                    error: Some(e),
-                    steps: Vec::new(),
-                });
-            }
+        while let Some(joined) = join_set.join_next().await {
+            let (eval_case, model, elapsed_ms, result) =
+                joined.map_err(|e| format!("parallel task join error: {e}"))?;
+            results.push(build_eval_result(eval_case, model, elapsed_ms, result));
+        }
+    } else {
+        for eval_case in &cases {
+            let started = Instant::now();
+            let result = run_case(&llm_client, &model, &dispatcher, eval_case).await;
+            let elapsed_ms = started.elapsed().as_millis() as u64;
+            results.push(build_eval_result(
+                (*eval_case).clone(),
+                model.clone(),
+                elapsed_ms,
+                result,
+            ));
         }
     }
+
+    results.sort_by(|a, b| a.case_id.cmp(&b.case_id));
 
     let total = results.len();
     let passed = results.iter().filter(|r| r.pass).count();
@@ -261,6 +232,78 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
         &results,
     )?;
     Ok(())
+}
+
+fn build_eval_result(
+    eval_case: EvalCase,
+    model: String,
+    elapsed_ms: u64,
+    result: Result<AgentCaseRun, String>,
+) -> EvalResult {
+    match result {
+        Ok(run) => {
+            let grade = grade_case(&eval_case, &run);
+            println!(
+                "[{}] {} :: {} ({elapsed_ms}ms)",
+                if grade.pass { "PASS" } else { "FAIL" },
+                eval_case.id,
+                eval_case.description
+            );
+            EvalResult {
+                case_id: eval_case.id,
+                model,
+                description: eval_case.description,
+                query: eval_case.query,
+                category: eval_case.category,
+                difficulty: eval_case.difficulty,
+                tags: eval_case.tags,
+                pass: grade.pass,
+                tier_a: grade.tier_a,
+                tier_b: grade.tier_b,
+                tier_c: grade.tier_c,
+                detail_a: grade.detail_a,
+                detail_b: grade.detail_b,
+                detail_c: grade.detail_c,
+                tools_called: run.tools_called,
+                response: run.response,
+                verified: run.verified,
+                duration_ms: run.duration_ms,
+                input_tokens: run.input_tokens,
+                output_tokens: run.output_tokens,
+                timestamp: Utc::now().to_rfc3339(),
+                error: None,
+                steps: run.steps,
+            }
+        }
+        Err(e) => {
+            println!("[ERROR] {} :: {} ({elapsed_ms}ms)", eval_case.id, e);
+            EvalResult {
+                case_id: eval_case.id,
+                model,
+                description: eval_case.description,
+                query: eval_case.query,
+                category: eval_case.category,
+                difficulty: eval_case.difficulty,
+                tags: eval_case.tags,
+                pass: false,
+                tier_a: false,
+                tier_b: false,
+                tier_c: false,
+                detail_a: "N/A".to_string(),
+                detail_b: "N/A".to_string(),
+                detail_c: "N/A".to_string(),
+                tools_called: Vec::new(),
+                response: String::new(),
+                verified: false,
+                duration_ms: elapsed_ms,
+                input_tokens: 0,
+                output_tokens: 0,
+                timestamp: Utc::now().to_rfc3339(),
+                error: Some(e),
+                steps: Vec::new(),
+            }
+        }
+    }
 }
 
 fn resolve_evals_root(explicit: Option<PathBuf>) -> Result<PathBuf, String> {

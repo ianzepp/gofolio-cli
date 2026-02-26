@@ -50,6 +50,9 @@ enum Command {
         /// Use live Ghostfolio API instead of fixture-backed mock data
         #[arg(long, default_value_t = false)]
         live: bool,
+        /// Run test cases in parallel (in-process async tasks)
+        #[arg(long, default_value_t = false)]
+        parallel: bool,
         /// List available suites and exit
         #[arg(long, default_value_t = false)]
         list_suites: bool,
@@ -89,6 +92,7 @@ async fn main() {
             evals_root,
             fixture_dir,
             live,
+            parallel,
             list_suites,
         } => {
             let args = evals::TestArgs {
@@ -99,6 +103,7 @@ async fn main() {
                 evals_root: evals_root.map(std::path::PathBuf::from),
                 fixture_dir: fixture_dir.map(std::path::PathBuf::from),
                 live,
+                parallel,
                 list_suites,
             };
             if let Err(e) = evals::run(args).await {
