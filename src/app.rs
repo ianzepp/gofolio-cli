@@ -449,7 +449,7 @@ impl AppState {
             };
             for model in model_rows {
                 items.push(ModalItem {
-                    text: format!("* {}", model.id),
+                    text: format!("• {}", model.id),
                     selectable: true,
                 });
                 values.push(Some(ModelModalValue::Model {
