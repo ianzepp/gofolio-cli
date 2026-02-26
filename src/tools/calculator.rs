@@ -18,7 +18,10 @@ fn eval(expr: &str) -> Result<f64, String> {
     let mut pos = 0;
     let result = parse_expr(&tokens, &mut pos)?;
     if pos < tokens.len() {
-        return Err(format!("unexpected token at position {pos}: {:?}", tokens[pos]));
+        return Err(format!(
+            "unexpected token at position {pos}: {:?}",
+            tokens[pos]
+        ));
     }
     Ok(result)
 }
@@ -266,7 +269,10 @@ fn apply_func(name: &str, args: &[f64]) -> Result<f64, String> {
                 let factor = 10f64.powi(args[1] as i32);
                 Ok((args[0] * factor).round() / factor)
             } else {
-                Err(format!("{name} expects 1 or 2 arguments, got {}", args.len()))
+                Err(format!(
+                    "{name} expects 1 or 2 arguments, got {}",
+                    args.len()
+                ))
             }
         }
         "floor" => {
