@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::agent::client::Provider;
+use crate::agent::client::{
+    Adapter, Provider, ProviderConfig, default_model_for_provider, provider_from_id,
+};
 
 /// Auth sub-object matching the original config.json structure.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -22,10 +24,16 @@ pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub traits: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "sessionId")]
     pub session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_adapter: Option<String>,
     /// Rust CLI extension — not present in original config.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anthropic_api_key: Option<String>,
@@ -126,44 +134,108 @@ impl Config {
     pub fn anthropic_api_key(&self) -> Option<String> {
         std::env::var("ANTHROPIC_API_KEY")
             .ok()
+            .filter(|s| !s.trim().is_empty())
             .or_else(|| self.anthropic_api_key.clone())
+            .filter(|s| !s.trim().is_empty())
     }
 
     /// Resolve OpenRouter API key: env > config.
     pub fn openrouter_api_key(&self) -> Option<String> {
         std::env::var("OPENROUTER_API_KEY")
             .ok()
+            .filter(|s| !s.trim().is_empty())
             .or_else(|| self.openrouter_api_key.clone())
+            .filter(|s| !s.trim().is_empty())
     }
 
     /// Resolve OpenAI API key: env > config.
     pub fn openai_api_key(&self) -> Option<String> {
         std::env::var("OPENAI_API_KEY")
             .ok()
+            .filter(|s| !s.trim().is_empty())
             .or_else(|| self.openai_api_key.clone())
+            .filter(|s| !s.trim().is_empty())
     }
 
-    /// Detect the LLM provider by checking API keys in priority order:
-    /// Anthropic > OpenRouter > OpenAI.
-    pub fn detect_llm_provider(&self) -> Option<(Provider, String)> {
-        if let Some(key) = self.anthropic_api_key() {
-            return Some((Provider::Anthropic, key));
-        }
-        if let Some(key) = self.openrouter_api_key() {
-            return Some((Provider::OpenRouter, key));
-        }
-        if let Some(key) = self.openai_api_key() {
-            return Some((Provider::OpenAI, key));
-        }
-        None
-    }
-
-    /// Resolve model: env > config > default.
-    pub fn model(&self) -> String {
-        std::env::var("GHOSTFOLIO_MODEL")
+    fn openai_adapter(&self) -> Adapter {
+        let value = std::env::var("OPENAI_ADAPTER")
             .ok()
-            .or_else(|| self.model.clone())
-            .unwrap_or_else(|| "claude-sonnet-4-6".to_string())
+            .or_else(|| self.llm_adapter.clone());
+        value
+            .as_deref()
+            .and_then(Adapter::parse)
+            .unwrap_or(Adapter::OpenAIChatCompletions)
+    }
+
+    fn openrouter_adapter(&self) -> Adapter {
+        let value = std::env::var("OPENROUTER_ADAPTER")
+            .ok()
+            .or_else(|| self.llm_adapter.clone());
+        value
+            .as_deref()
+            .and_then(Adapter::parse)
+            .unwrap_or(Adapter::OpenAIChatCompletions)
+    }
+
+    pub fn configured_llm_providers(&self) -> Vec<ProviderConfig> {
+        let mut providers = Vec::new();
+        if let Some(api_key) = self.anthropic_api_key() {
+            providers.push(ProviderConfig {
+                provider: Provider::Anthropic,
+                adapter: Adapter::AnthropicMessages,
+                api_key,
+            });
+        }
+        if let Some(api_key) = self.openrouter_api_key() {
+            providers.push(ProviderConfig {
+                provider: Provider::OpenRouter,
+                adapter: self.openrouter_adapter(),
+                api_key,
+            });
+        }
+        if let Some(api_key) = self.openai_api_key() {
+            providers.push(ProviderConfig {
+                provider: Provider::OpenAI,
+                adapter: self.openai_adapter(),
+                api_key,
+            });
+        }
+        providers
+    }
+
+    pub fn preferred_llm_provider(&self, configured: &[ProviderConfig]) -> Option<Provider> {
+        let preferred = std::env::var("GHOSTFOLIO_LLM_PROVIDER")
+            .ok()
+            .or_else(|| self.llm_provider.clone())
+            .and_then(|id| provider_from_id(id.trim().to_lowercase().as_str()));
+
+        if let Some(provider) = preferred
+            && configured.iter().any(|c| c.provider == provider)
+        {
+            return Some(provider);
+        }
+
+        configured.first().map(|c| c.provider)
+    }
+
+    /// Resolve model: env > config > provider-aware default.
+    pub fn model_for_provider(&self, provider: Provider) -> String {
+        if let Ok(model) = std::env::var("GHOSTFOLIO_MODEL") {
+            return model;
+        }
+
+        let same_provider = self
+            .model_provider
+            .as_deref()
+            .and_then(provider_from_id)
+            .map(|p| p == provider)
+            .unwrap_or(false);
+
+        if same_provider && let Some(model) = self.model.clone() {
+            return model;
+        }
+
+        default_model_for_provider(provider).to_string()
     }
 
     /// Resolve LangChain/LangSmith API key: env > config.

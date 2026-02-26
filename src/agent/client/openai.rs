@@ -30,7 +30,7 @@ impl OpenAIClient {
         })
     }
 
-    pub async fn chat(
+    pub async fn chat_chat_completions(
         &self,
         model: &str,
         max_tokens: u32,
@@ -51,6 +51,46 @@ impl OpenAIClient {
         let response = self
             .http
             .post(format!("{}/chat/completions", self.base_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AgentError::ApiRequest(e.to_string()))?;
+
+        let status = response.status().as_u16();
+        let text = response
+            .text()
+            .await
+            .map_err(|e| AgentError::ApiRequest(e.to_string()))?;
+
+        if status != 200 {
+            return Err(AgentError::ApiResponse { status, body: text });
+        }
+
+        self.parse_response(&text, model)
+    }
+
+    pub async fn chat_messages(
+        &self,
+        model: &str,
+        max_tokens: u32,
+        system: &str,
+        messages: &[Message],
+        tools: Option<&[Tool]>,
+    ) -> Result<ChatResponse, AgentError> {
+        let oai_messages = self.translate_messages(system, messages);
+        let oai_tools = tools.map(|t| t.iter().map(translate_tool).collect::<Vec<_>>());
+
+        let body = OaiRequest {
+            model,
+            max_tokens,
+            messages: &oai_messages,
+            tools: oai_tools.as_deref(),
+        };
+
+        let response = self
+            .http
+            .post(format!("{}/messages", self.base_url))
             .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&body)
             .send()

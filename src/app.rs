@@ -6,7 +6,7 @@ use ratatui::DefaultTerminal;
 use tokio::sync::mpsc;
 use tracing::info;
 
-use crate::agent::client::{self, LlmClient, ModelEntry};
+use crate::agent::client::{self, LlmClient, ModelEntry, Provider, ProviderConfig};
 use crate::agent::types::{Content, Message, ToolCallRecord};
 use crate::agent::{self, AgentEvent};
 use crate::api::GhostfolioClient;
@@ -44,6 +44,12 @@ pub enum Screen {
     App,
 }
 
+#[derive(Debug, Clone)]
+enum ModelModalValue {
+    Provider(Provider),
+    Model { provider: Provider, id: String },
+}
+
 pub struct AppState {
     pub screen: Screen,
     pub messages: Vec<ChatMessage>,
@@ -68,7 +74,10 @@ pub struct AppState {
 
     // Internal state
     config: Config,
-    llm_client: Option<LlmClient>,
+    llm_providers: Vec<ProviderConfig>,
+    llm_clients: Vec<(Provider, LlmClient)>,
+    active_provider: Option<Provider>,
+    model_modal_values: Vec<ModelModalValue>,
     api_client: Option<GhostfolioClient>,
     history: Vec<Message>,
     agent_rx: Option<mpsc::UnboundedReceiver<AgentEvent>>,
@@ -81,12 +90,18 @@ pub struct AppState {
 impl AppState {
     fn new() -> Self {
         let config = Config::load();
-        let model = config.model();
         let langsmith = LangSmithConfig::from_config(&config);
-
-        let llm_client = config
-            .detect_llm_provider()
-            .and_then(|(provider, key)| client::create_client(&provider, key).ok());
+        let llm_providers = config.configured_llm_providers();
+        let llm_clients: Vec<(Provider, LlmClient)> = llm_providers
+            .iter()
+            .filter_map(|cfg| client::create_client(cfg).ok().map(|c| (cfg.provider, c)))
+            .collect();
+        let active_provider = config
+            .preferred_llm_provider(&llm_providers)
+            .filter(|p| llm_clients.iter().any(|(provider, _)| provider == p));
+        let model = active_provider
+            .map(|p| config.model_for_provider(p))
+            .unwrap_or_else(|| config.model_for_provider(Provider::Anthropic));
 
         // Check for pre-configured auth
         let has_token = config.access_token().is_some();
@@ -121,7 +136,10 @@ impl AppState {
             market_quotes: Vec::new(),
             portfolio: None,
             config,
-            llm_client,
+            llm_providers,
+            llm_clients,
+            active_provider,
+            model_modal_values: Vec::new(),
             api_client: None,
             history: Vec::new(),
             agent_rx: None,
@@ -244,10 +262,15 @@ impl AppState {
             self.loading = false;
             return;
         };
-        let Some(ref llm_client) = self.llm_client else {
+        let Some(provider) = self.active_provider else {
             self.push_warning(
                 "No LLM API key configured. Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY.",
             );
+            self.loading = false;
+            return;
+        };
+        let Some(llm_client) = self.client_for_provider(provider).cloned() else {
+            self.push_warning("Configured provider client is unavailable.");
             self.loading = false;
             return;
         };
@@ -258,7 +281,7 @@ impl AppState {
 
         agent::spawn_agent(
             api_client.clone(),
-            llm_client.clone(),
+            llm_client,
             self.model.clone(),
             self.history.clone(),
             self.langsmith.clone(),
@@ -326,26 +349,51 @@ impl AppState {
         }
     }
 
+    fn client_for_provider(&self, provider: Provider) -> Option<&LlmClient> {
+        self.llm_clients
+            .iter()
+            .find_map(|(p, c)| (*p == provider).then_some(c))
+    }
+
     fn open_model_modal(&mut self) {
+        let mut items = Vec::new();
+        let mut values = Vec::new();
+        for cfg in &self.llm_providers {
+            if self.client_for_provider(cfg.provider).is_none() {
+                continue;
+            }
+            items.push(format!("{} [{}]", cfg.provider.label(), cfg.adapter.id()));
+            values.push(ModelModalValue::Provider(cfg.provider));
+        }
+
+        self.model_modal_values = values;
+        self.modal = Some(ModalState::new("Select Provider".to_string(), items));
+    }
+
+    fn open_model_modal_for_provider(&mut self, provider: Provider) {
         let items: Vec<String> = if self.available_models.is_empty() {
-            // Fallback if models haven't loaded yet
-            vec![
-                "claude-opus-4-6".to_string(),
-                "claude-sonnet-4-6".to_string(),
-                "claude-haiku-4-5-20251001".to_string(),
-            ]
+            vec![client::default_model_for_provider(provider).to_string()]
         } else {
             self.available_models
                 .iter()
                 .map(|m| format!("{} ({})", m.id, m.display_name))
                 .collect()
         };
+        self.model_modal_values = items
+            .iter()
+            .map(|item| {
+                let id = item.split(" (").next().unwrap_or(item).to_string();
+                ModelModalValue::Model { provider, id }
+            })
+            .collect();
         self.modal = Some(ModalState::new("Select Model".to_string(), items));
     }
 
-    async fn load_models(&mut self) {
-        if let Some(ref c) = self.llm_client {
+    async fn load_models(&mut self, provider: Provider) {
+        if let Some(c) = self.client_for_provider(provider) {
             self.available_models = c.fetch_models().await;
+        } else {
+            self.available_models.clear();
         }
     }
 
@@ -361,7 +409,10 @@ impl AppState {
                 self.api_client = Some(client);
                 self.screen = Screen::App;
                 self.push_system("Connected. Loading portfolio data...");
-                self.load_models().await;
+                if let Some(provider) = self.active_provider {
+                    self.model = self.config.model_for_provider(provider);
+                    self.load_models(provider).await;
+                }
             }
             Err(_) => {
                 self.screen = Screen::Login(LoginState::default());
@@ -384,7 +435,10 @@ impl AppState {
                 self.api_client = Some(client);
                 self.screen = Screen::App;
                 self.push_system("Connected. Loading portfolio data...");
-                self.load_models().await;
+                if let Some(provider) = self.active_provider {
+                    self.model = self.config.model_for_provider(provider);
+                    self.load_models(provider).await;
+                }
             }
             Err(e) => {
                 if let Screen::Login(ref mut ls) = self.screen {
@@ -525,6 +579,7 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
                         match key.code {
                             KeyCode::Esc => {
                                 state.modal = None;
+                                state.model_modal_values.clear();
                             }
                             KeyCode::Up => {
                                 if let Some(ref mut m) = state.modal {
@@ -539,18 +594,45 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
                             KeyCode::Enter => {
                                 if let Some(ref m) = state.modal {
                                     let filtered = m.filtered_items();
-                                    if let Some((_idx, item)) = filtered.get(m.selected) {
-                                        // Extract model ID (before " (" if display name appended)
-                                        let selected =
-                                            item.split(" (").next().unwrap_or(item).to_string();
-                                        info!(selected = %selected, "modal: selected");
-                                        state.model = selected.clone();
-                                        state.config.model = Some(selected.clone());
-                                        state.config.save();
-                                        state.push_system(&format!("Model set to {selected}"));
+                                    if let Some((orig_idx, _item)) = filtered.get(m.selected)
+                                        && let Some(value) =
+                                            state.model_modal_values.get(*orig_idx).cloned()
+                                    {
+                                        match value {
+                                            ModelModalValue::Provider(provider) => {
+                                                state.active_provider = Some(provider);
+                                                state.config.llm_provider =
+                                                    Some(provider.id().to_string());
+                                                state.model =
+                                                    state.config.model_for_provider(provider);
+                                                info!(
+                                                    provider = %provider.label(),
+                                                    "modal: selected provider"
+                                                );
+                                                state.load_models(provider).await;
+                                                state.open_model_modal_for_provider(provider);
+                                                continue;
+                                            }
+                                            ModelModalValue::Model { provider, id } => {
+                                                state.active_provider = Some(provider);
+                                                state.model = id.clone();
+                                                state.config.llm_provider =
+                                                    Some(provider.id().to_string());
+                                                state.config.model = Some(id.clone());
+                                                state.config.model_provider =
+                                                    Some(provider.id().to_string());
+                                                state.config.save();
+                                                state.push_system(&format!(
+                                                    "Provider set to {}. Model set to {}",
+                                                    provider.label(),
+                                                    id
+                                                ));
+                                            }
+                                        }
                                     }
                                 }
                                 state.modal = None;
+                                state.model_modal_values.clear();
                             }
                             KeyCode::Backspace => {
                                 if let Some(ref mut m) = state.modal {
