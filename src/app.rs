@@ -90,7 +90,10 @@ pub struct AppState {
 }
 
 impl AppState {
-    fn header_keys_from_statuses(statuses: &[ProviderKeyStatus]) -> String {
+    fn header_keys_from_statuses(
+        statuses: &[ProviderKeyStatus],
+        langsmith: Option<&LangSmithConfig>,
+    ) -> String {
         let mut parts = Vec::new();
         for s in statuses {
             let mark = if !s.configured {
@@ -104,6 +107,8 @@ impl AppState {
             };
             parts.push(format!("{}{}", s.provider.label(), mark));
         }
+        let langchain_mark = if langsmith.is_some() { "✓" } else { "✗" };
+        parts.push(format!("LANGCHAIN{langchain_mark}"));
         parts.join("  ")
     }
 
@@ -119,7 +124,8 @@ impl AppState {
         let model = active_provider
             .map(|p| config.model_for_provider(p))
             .unwrap_or_else(|| config.model_for_provider(Provider::Anthropic));
-        let llm_keys_header = Self::header_keys_from_statuses(&provider_key_statuses);
+        let llm_keys_header =
+            Self::header_keys_from_statuses(&provider_key_statuses, langsmith.as_ref());
 
         // Check for pre-configured auth
         let has_token = config.access_token().is_some();
