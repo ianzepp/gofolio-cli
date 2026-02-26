@@ -24,9 +24,21 @@ fn cache_path(provider: Provider) -> PathBuf {
 
 pub fn load(provider: Provider) -> Option<Vec<ModelEntry>> {
     let path = cache_path(provider);
-    let contents = std::fs::read_to_string(&path).ok()?;
-    let cache: ProviderModelsCache = serde_json::from_str(&contents).ok()?;
-    Some(cache.models)
+    let contents = match std::fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(_) => return None,
+    };
+    match serde_json::from_str::<ProviderModelsCache>(&contents) {
+        Ok(cache) => Some(cache.models),
+        Err(e) => {
+            warn!(
+                path = %path.display(),
+                error = %e,
+                "provider-cache: failed to parse model cache"
+            );
+            None
+        }
+    }
 }
 
 pub fn save(provider: Provider, models: &[ModelEntry]) {

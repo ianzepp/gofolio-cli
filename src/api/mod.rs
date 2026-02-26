@@ -22,11 +22,7 @@ pub struct GhostfolioClient {
 
 impl GhostfolioClient {
     pub fn new(base_url: String, jwt: String) -> Self {
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .connect_timeout(Duration::from_secs(10))
-            .build()
-            .expect("failed to build HTTP client");
+        let http = build_http_client();
 
         Self {
             http,
@@ -90,5 +86,21 @@ impl GhostfolioClient {
             .json()
             .await
             .map_err(|e| ApiError::Parse(e.to_string()))
+    }
+}
+
+fn build_http_client() -> reqwest::Client {
+    match reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(10))
+        .build()
+    {
+        Ok(client) => client,
+        Err(e) => {
+            eprintln!(
+                "Warning: failed to build configured HTTP client, falling back to default: {e}"
+            );
+            reqwest::Client::new()
+        }
     }
 }

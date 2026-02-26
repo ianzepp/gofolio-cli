@@ -14,6 +14,7 @@ mod ui;
 mod warmup;
 
 use clap::{Parser, Subcommand};
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
 #[command(name = "ghostfolio")]
@@ -73,13 +74,7 @@ enum Command {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("ghostfolio_cli=info".parse().unwrap()),
-        )
-        .with_target(false)
-        .init();
+    init_tracing();
 
     let cli = Cli::parse();
 
@@ -242,4 +237,19 @@ async fn main() {
             }
         }
     }
+}
+
+fn init_tracing() {
+    let base_filter = EnvFilter::from_default_env();
+    let filter = match "ghostfolio_cli=info".parse() {
+        Ok(directive) => base_filter.add_directive(directive),
+        Err(e) => {
+            eprintln!("Warning: failed to parse default tracing directive: {e}");
+            base_filter
+        }
+    };
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .init();
 }

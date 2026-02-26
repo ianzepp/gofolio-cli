@@ -4,6 +4,7 @@ use std::time::Instant;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::DefaultTerminal;
 use tokio::sync::mpsc;
+use tracing::warn;
 
 use crate::agent::client::{self, LlmClient, ModelEntry, Provider, ProviderConfig};
 use crate::agent::types::{Content, Message, ToolCallRecord};
@@ -111,10 +112,7 @@ impl AppState {
         let langsmith = LangSmithConfig::from_config(&config);
         let provider_key_statuses = config.provider_key_statuses();
         let llm_providers = config.configured_llm_providers();
-        let llm_clients: Vec<(Provider, LlmClient)> = llm_providers
-            .iter()
-            .filter_map(|cfg| client::create_client(cfg).ok().map(|c| (cfg.provider, c)))
-            .collect();
+        let llm_clients = build_llm_clients(&llm_providers);
         let active_provider = config
             .preferred_llm_provider(&llm_providers)
             .filter(|p| llm_clients.iter().any(|(provider, _)| provider == p));
@@ -572,6 +570,23 @@ impl AppState {
             }
         }
     }
+}
+
+fn build_llm_clients(providers: &[ProviderConfig]) -> Vec<(Provider, LlmClient)> {
+    let mut clients = Vec::new();
+    for cfg in providers {
+        match client::create_client(cfg) {
+            Ok(client) => clients.push((cfg.provider, client)),
+            Err(e) => {
+                warn!(
+                    provider = cfg.provider.id(),
+                    error = %e,
+                    "app: failed to initialize llm provider client"
+                );
+            }
+        }
+    }
+    clients
 }
 
 pub async fn run() -> io::Result<()> {

@@ -198,50 +198,40 @@ impl Config {
 
     /// Resolve ghostfolio URL: env > config > default.
     pub fn ghostfolio_url(&self) -> String {
-        std::env::var("GHOSTFOLIO_URL")
-            .ok()
+        env_var("GHOSTFOLIO_URL")
             .or_else(|| self.auth.as_ref().and_then(|a| a.url.clone()))
             .unwrap_or_else(|| "http://localhost:3333".to_string())
     }
 
     /// Resolve access token: env > config.
     pub fn access_token(&self) -> Option<String> {
-        std::env::var("GHOSTFOLIO_ACCESS_TOKEN")
-            .ok()
+        env_var("GHOSTFOLIO_ACCESS_TOKEN")
             .or_else(|| self.auth.as_ref().and_then(|a| a.token.clone()))
     }
 
     /// Resolve Anthropic API key: env > config.
     pub fn anthropic_api_key(&self) -> Option<String> {
-        std::env::var("ANTHROPIC_API_KEY")
-            .ok()
-            .filter(|s| !s.trim().is_empty())
+        env_var_non_empty("ANTHROPIC_API_KEY")
             .or_else(|| self.anthropic_api_key.clone())
             .filter(|s| !s.trim().is_empty())
     }
 
     /// Resolve OpenRouter API key: env > config.
     pub fn openrouter_api_key(&self) -> Option<String> {
-        std::env::var("OPENROUTER_API_KEY")
-            .ok()
-            .filter(|s| !s.trim().is_empty())
+        env_var_non_empty("OPENROUTER_API_KEY")
             .or_else(|| self.openrouter_api_key.clone())
             .filter(|s| !s.trim().is_empty())
     }
 
     /// Resolve OpenAI API key: env > config.
     pub fn openai_api_key(&self) -> Option<String> {
-        std::env::var("OPENAI_API_KEY")
-            .ok()
-            .filter(|s| !s.trim().is_empty())
+        env_var_non_empty("OPENAI_API_KEY")
             .or_else(|| self.openai_api_key.clone())
             .filter(|s| !s.trim().is_empty())
     }
 
     fn openai_adapter(&self) -> Adapter {
-        let value = std::env::var("OPENAI_ADAPTER")
-            .ok()
-            .or_else(|| self.llm_adapter.clone());
+        let value = env_var("OPENAI_ADAPTER").or_else(|| self.llm_adapter.clone());
         value
             .as_deref()
             .and_then(Adapter::parse)
@@ -249,9 +239,7 @@ impl Config {
     }
 
     fn openrouter_adapter(&self) -> Adapter {
-        let value = std::env::var("OPENROUTER_ADAPTER")
-            .ok()
-            .or_else(|| self.llm_adapter.clone());
+        let value = env_var("OPENROUTER_ADAPTER").or_else(|| self.llm_adapter.clone());
         value
             .as_deref()
             .and_then(Adapter::parse)
@@ -285,8 +273,7 @@ impl Config {
     }
 
     pub fn preferred_llm_provider(&self, configured: &[ProviderConfig]) -> Option<Provider> {
-        let preferred = std::env::var("GHOSTFOLIO_LLM_PROVIDER")
-            .ok()
+        let preferred = env_var("GHOSTFOLIO_LLM_PROVIDER")
             .or_else(|| self.llm_provider.clone())
             .and_then(|id| provider_from_id(id.trim().to_lowercase().as_str()));
 
@@ -321,15 +308,12 @@ impl Config {
 
     /// Resolve LangChain/LangSmith API key: env > config.
     pub fn langchain_api_key(&self) -> Option<String> {
-        std::env::var("LANGCHAIN_API_KEY")
-            .ok()
-            .or_else(|| self.langchain_api_key.clone())
+        env_var("LANGCHAIN_API_KEY").or_else(|| self.langchain_api_key.clone())
     }
 
     /// Resolve LangChain/LangSmith project name: env > config > default.
     pub fn langchain_project(&self) -> String {
-        std::env::var("LANGCHAIN_PROJECT")
-            .ok()
+        env_var("LANGCHAIN_PROJECT")
             .or_else(|| self.langchain_project.clone())
             .unwrap_or_else(|| "ghostfolio".to_string())
     }
@@ -342,4 +326,15 @@ impl Config {
             token: token.or(existing.token),
         });
     }
+}
+
+fn env_var(name: &str) -> Option<String> {
+    match std::env::var(name) {
+        Ok(value) => Some(value),
+        Err(_) => None,
+    }
+}
+
+fn env_var_non_empty(name: &str) -> Option<String> {
+    env_var(name).filter(|s| !s.trim().is_empty())
 }

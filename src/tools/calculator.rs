@@ -331,7 +331,10 @@ mod tests {
     use super::*;
 
     fn calc(expr: &str) -> f64 {
-        eval(expr).unwrap()
+        match eval(expr) {
+            Ok(value) => value,
+            Err(e) => panic!("calculator eval failed for '{expr}': {e}"),
+        }
     }
 
     #[test]

@@ -156,15 +156,7 @@ pub async fn run_with_dispatcher(
                 steps: steps_out,
                 tool_calls: all_tool_calls,
                 chart_data,
-                verified: messages.iter().any(|m| {
-                    matches!(
-                        &m.content,
-                        Content::Blocks(blocks)
-                            if blocks
-                                .iter()
-                                .any(|b| matches!(b, ContentBlock::ToolResult { .. }))
-                    )
-                }),
+                verified: conversation_has_tool_results(&messages),
             });
         }
 
@@ -300,4 +292,17 @@ fn extract_last_user_input(messages: &[Message]) -> String {
             Content::Blocks(_) => "(tool results)".to_string(),
         })
         .unwrap_or_default()
+}
+
+fn conversation_has_tool_results(messages: &[Message]) -> bool {
+    messages.iter().any(message_has_tool_result)
+}
+
+fn message_has_tool_result(message: &Message) -> bool {
+    match &message.content {
+        Content::Blocks(blocks) => blocks
+            .iter()
+            .any(|block| matches!(block, ContentBlock::ToolResult { .. })),
+        Content::Text(_) => false,
+    }
 }

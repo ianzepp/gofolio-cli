@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, warn};
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(300); // 5 minutes
 
@@ -37,10 +37,16 @@ pub fn spawn_market_feed(tx: mpsc::UnboundedSender<Vec<MarketQuote>>) {
 }
 
 async fn fetch_all_quotes() -> Vec<MarketQuote> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .unwrap_or_default();
+    let Some(client) = build_market_http_client() else {
+        return SYMBOLS
+            .iter()
+            .map(|(_, name)| MarketQuote {
+                name: (*name).to_string(),
+                price: 0.0,
+                change_pct: 0.0,
+            })
+            .collect();
+    };
 
     let mut quotes = Vec::new();
 
@@ -74,14 +80,26 @@ async fn fetch_one(client: &reqwest::Client, symbol: &str) -> Option<(f64, f64)>
         symbol
     );
 
-    let response = client
+    let response = match client
         .get(&url)
         .header("User-Agent", "Mozilla/5.0")
         .send()
         .await
-        .ok()?;
+    {
+        Ok(response) => response,
+        Err(e) => {
+            warn!(symbol, error = %e, "market: quote request failed");
+            return None;
+        }
+    };
 
-    let body: ChartResponse = response.json().await.ok()?;
+    let body: ChartResponse = match response.json().await {
+        Ok(body) => body,
+        Err(e) => {
+            warn!(symbol, error = %e, "market: invalid quote response body");
+            return None;
+        }
+    };
     let result = body.chart.result?.into_iter().next()?;
 
     let price = result.meta.regular_market_price?;
@@ -94,6 +112,19 @@ async fn fetch_one(client: &reqwest::Client, symbol: &str) -> Option<(f64, f64)>
     };
 
     Some((price, change_pct))
+}
+
+fn build_market_http_client() -> Option<reqwest::Client> {
+    match reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+    {
+        Ok(client) => Some(client),
+        Err(e) => {
+            warn!(error = %e, "market: failed to create HTTP client");
+            None
+        }
+    }
 }
 
 #[derive(Deserialize)]

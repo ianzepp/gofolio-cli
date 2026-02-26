@@ -15,9 +15,7 @@ pub fn render(input: &str, width: usize) -> Vec<Line<'static>> {
         // Empty line — collapse consecutive blanks into one
         if line.trim().is_empty() {
             // Only add a blank if the last line wasn't already blank
-            let last_is_blank = result.last().is_some_and(|l: &Line<'_>| {
-                l.spans.is_empty() || (l.spans.len() == 1 && l.spans[0].content.is_empty())
-            });
+            let last_is_blank = result.last().is_some_and(is_render_blank_line);
             if !last_is_blank && !result.is_empty() {
                 result.push(Line::from(""));
             }
@@ -134,6 +132,10 @@ pub fn render(input: &str, width: usize) -> Vec<Line<'static>> {
 
 fn is_blank_line(line: &Line<'_>) -> bool {
     line.spans.is_empty() || (line.spans.len() == 1 && line.spans[0].content.trim().is_empty())
+}
+
+fn is_render_blank_line(line: &Line<'_>) -> bool {
+    line.spans.is_empty() || (line.spans.len() == 1 && line.spans[0].content.is_empty())
 }
 
 /// Check if a line starts a block-level element.
@@ -260,34 +262,20 @@ fn parse_inline_spans(text: &str) -> Vec<Span<'static>> {
 
 fn render_table_block(lines: &[&str]) -> Vec<Line<'static>> {
     if lines.len() < 2 {
-        return lines
-            .iter()
-            .map(|l| Line::from(Span::raw(l.to_string())))
-            .collect();
+        return fallback_table_lines(lines);
     }
 
-    let split_row = |line: &str| -> Vec<String> {
-        line.trim_start_matches('|')
-            .trim_end_matches('|')
-            .split('|')
-            .map(|c| c.trim().to_string())
-            .collect()
-    };
-
-    let headers = split_row(lines[0]);
-    let sep = split_row(lines[1]);
+    let headers = split_table_row(lines[0]);
+    let sep = split_table_row(lines[1]);
 
     if !sep
         .iter()
         .all(|c| !c.is_empty() && c.chars().all(|ch| ch == '-' || ch == ':'))
     {
-        return lines
-            .iter()
-            .map(|l| Line::from(Span::raw(l.to_string())))
-            .collect();
+        return fallback_table_lines(lines);
     }
 
-    let rows: Vec<Vec<String>> = lines[2..].iter().map(|l| split_row(l)).collect();
+    let rows: Vec<Vec<String>> = lines[2..].iter().map(|l| split_table_row(l)).collect();
 
     let col_widths: Vec<usize> = headers
         .iter()
@@ -357,6 +345,21 @@ fn display_len(text: &str) -> usize {
     text.replace("**", "").len()
 }
 
+fn split_table_row(line: &str) -> Vec<String> {
+    line.trim_start_matches('|')
+        .trim_end_matches('|')
+        .split('|')
+        .map(|c| c.trim().to_string())
+        .collect()
+}
+
+fn fallback_table_lines(lines: &[&str]) -> Vec<Line<'static>> {
+    lines
+        .iter()
+        .map(|l| Line::from(Span::raw(l.to_string())))
+        .collect()
+}
+
 // --- Word wrapping ---
 
 /// Wrap a single Line's spans to fit within `width` columns.
@@ -394,9 +397,7 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
                 while !remaining.is_empty() {
                     let take = remaining.len().min(width);
                     let (chunk, rest) = remaining.split_at(take);
-                    rows.last_mut()
-                        .unwrap()
-                        .push(Span::styled(chunk.to_string(), style));
+                    push_span_to_last_row(&mut rows, Span::styled(chunk.to_string(), style));
                     remaining = rest;
                     if !remaining.is_empty() {
                         rows.push(Vec::new());
@@ -416,12 +417,10 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
                 if trimmed.is_empty() {
                     continue;
                 }
-                rows.last_mut()
-                    .unwrap()
-                    .push(Span::styled(trimmed.to_string(), style));
+                push_span_to_last_row(&mut rows, Span::styled(trimmed.to_string(), style));
                 col += trimmed.len();
             } else {
-                rows.last_mut().unwrap().push(Span::styled(word, style));
+                push_span_to_last_row(&mut rows, Span::styled(word, style));
                 col += word_len;
             }
         }
@@ -430,6 +429,15 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
     rows.into_iter()
         .map(|spans| Line::from(spans).style(line.style))
         .collect()
+}
+
+fn push_span_to_last_row(rows: &mut Vec<Vec<Span<'static>>>, span: Span<'static>) {
+    if rows.is_empty() {
+        rows.push(Vec::new());
+    }
+    if let Some(last) = rows.last_mut() {
+        last.push(span);
+    }
 }
 
 /// Split text into word chunks, keeping whitespace attached to the following word.
