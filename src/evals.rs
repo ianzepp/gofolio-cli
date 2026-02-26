@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs::{create_dir_all, read_dir, read_to_string};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -19,11 +19,13 @@ pub struct TestArgs {
     pub suite: String,
     pub case_ids: Option<Vec<String>>,
     pub model: Option<String>,
+    pub models: Option<Vec<String>>,
     pub provider: Option<String>,
     pub evals_root: Option<PathBuf>,
     pub fixture_dir: Option<PathBuf>,
     pub live: bool,
     pub parallel: bool,
+    pub max_parallel: Option<usize>,
     pub list_suites: bool,
 }
 
@@ -94,6 +96,13 @@ struct AgentCaseRun {
     output_tokens: u64,
 }
 
+#[derive(Clone)]
+struct ModelTarget {
+    client: LlmClient,
+    provider: Provider,
+    model: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct StepRun {
     step_number: usize,
@@ -135,14 +144,19 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
         return Err("no cases selected".to_string());
     }
 
-    let (llm_client, provider, model) = build_llm_client(args.model, args.provider)?;
+    let model_overrides = normalize_model_overrides(args.model, args.models)?;
+    let targets = build_model_targets(model_overrides, args.provider)?;
+    let model_labels: Vec<String> = targets
+        .iter()
+        .map(|t| format!("{}:{}", t.provider.id(), t.model))
+        .collect();
     println!(
-        "Running suite '{}' ({} cases) with provider={} model={}",
+        "Running suite '{}' ({} cases x {} models)",
         args.suite,
         cases.len(),
-        provider.label(),
-        model
+        targets.len()
     );
+    println!("Models: {}", model_labels.join(", "));
 
     let run_started = Instant::now();
     let run_id = format!("rust-{}", Utc::now().format("%Y%m%d-%H%M%S"));
@@ -169,46 +183,30 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
         ToolDispatcher::Mock(fixtures)
     };
 
-    let mut results = Vec::with_capacity(cases.len());
+    let mut results = Vec::with_capacity(cases.len() * targets.len());
+    let default_parallel = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let max_parallel = args.max_parallel.unwrap_or(default_parallel).max(1);
     if args.parallel {
-        let mut join_set = JoinSet::new();
-        for eval_case in cases {
-            let eval_case = (*eval_case).clone();
-            let llm_client = llm_client.clone();
-            let model = model.clone();
-            let dispatcher = dispatcher.clone();
-            join_set.spawn(async move {
-                let started = Instant::now();
-                let result = run_case(&llm_client, &model, &dispatcher, &eval_case).await;
-                (
-                    eval_case,
-                    model,
-                    started.elapsed().as_millis() as u64,
-                    result,
-                )
-            });
-        }
-
-        while let Some(joined) = join_set.join_next().await {
-            let (eval_case, model, elapsed_ms, result) =
-                joined.map_err(|e| format!("parallel task join error: {e}"))?;
-            results.push(build_eval_result(eval_case, model, elapsed_ms, result));
-        }
-    } else {
-        for eval_case in &cases {
-            let started = Instant::now();
-            let result = run_case(&llm_client, &model, &dispatcher, eval_case).await;
-            let elapsed_ms = started.elapsed().as_millis() as u64;
-            results.push(build_eval_result(
-                (*eval_case).clone(),
-                model.clone(),
-                elapsed_ms,
-                result,
-            ));
-        }
+        println!("Parallel case execution enabled (max_parallel={max_parallel})");
+    }
+    for target in &targets {
+        println!(
+            "Model run: provider={} model={}",
+            target.provider.label(),
+            target.model
+        );
+        let mut model_results =
+            run_cases_for_target(&cases, target, &dispatcher, args.parallel, max_parallel).await?;
+        results.append(&mut model_results);
     }
 
-    results.sort_by(|a, b| a.case_id.cmp(&b.case_id));
+    results.sort_by(|a, b| {
+        a.model
+            .cmp(&b.model)
+            .then_with(|| a.case_id.cmp(&b.case_id))
+    });
 
     let total = results.len();
     let passed = results.iter().filter(|r| r.pass).count();
@@ -221,13 +219,17 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
         "Summary: total={} passed={} failed={} errors={} input_tokens={} output_tokens={}",
         total, passed, failed, errors, total_input_tokens, total_output_tokens
     );
+    print_model_summary(&results);
+    if targets.len() > 1 {
+        print_model_comparison(&results);
+    }
 
     write_results_jsonl(&evals_root, &results)?;
     write_results_sqlite(
         &evals_root,
         &run_id,
         &args.suite,
-        &model,
+        &model_labels.join(", "),
         run_duration_ms,
         &results,
     )?;
@@ -306,6 +308,77 @@ fn build_eval_result(
     }
 }
 
+fn print_model_summary(results: &[EvalResult]) {
+    #[derive(Default)]
+    struct Summary {
+        total: usize,
+        passed: usize,
+        errors: usize,
+        input_tokens: u64,
+        output_tokens: u64,
+        duration_ms: u64,
+    }
+
+    let mut per_model: BTreeMap<&str, Summary> = BTreeMap::new();
+    for result in results {
+        let summary = per_model.entry(result.model.as_str()).or_default();
+        summary.total += 1;
+        if result.pass {
+            summary.passed += 1;
+        }
+        if result.error.is_some() {
+            summary.errors += 1;
+        }
+        summary.input_tokens += result.input_tokens;
+        summary.output_tokens += result.output_tokens;
+        summary.duration_ms += result.duration_ms;
+    }
+
+    println!("Model summary:");
+    for (model, summary) in per_model {
+        println!(
+            "- {} total={} passed={} failed={} errors={} input_tokens={} output_tokens={} duration_ms={}",
+            model,
+            summary.total,
+            summary.passed,
+            summary.total - summary.passed,
+            summary.errors,
+            summary.input_tokens,
+            summary.output_tokens,
+            summary.duration_ms
+        );
+    }
+}
+
+fn print_model_comparison(results: &[EvalResult]) {
+    let mut by_case: BTreeMap<&str, Vec<&EvalResult>> = BTreeMap::new();
+    for result in results {
+        by_case
+            .entry(result.case_id.as_str())
+            .or_default()
+            .push(result);
+    }
+
+    println!("Cross-model diffs:");
+    let mut diff_count = 0usize;
+    for (case_id, rows) in by_case {
+        let first = rows.first().map(|r| r.pass).unwrap_or(false);
+        let has_diff = rows.iter().any(|r| r.pass != first);
+        if !has_diff {
+            continue;
+        }
+        diff_count += 1;
+        let statuses: Vec<String> = rows
+            .iter()
+            .map(|r| format!("{}={}", r.model, if r.pass { "PASS" } else { "FAIL" }))
+            .collect();
+        println!("- {} :: {}", case_id, statuses.join(", "));
+    }
+    if diff_count == 0 {
+        println!("- none");
+    }
+}
+
 fn resolve_evals_root(explicit: Option<PathBuf>) -> Result<PathBuf, String> {
     if let Some(path) = explicit {
         return Ok(path);
@@ -363,13 +436,45 @@ fn filter_cases<'a>(all_cases: &'a [EvalCase], suite: &SuiteConfig) -> Vec<&'a E
     }
 }
 
-fn build_llm_client(
-    override_model: Option<String>,
+fn normalize_model_overrides(
+    model: Option<String>,
+    models: Option<Vec<String>>,
+) -> Result<Vec<String>, String> {
+    let values = if let Some(list) = models {
+        list
+    } else if let Some(single) = model {
+        vec![single]
+    } else {
+        Vec::new()
+    };
+    let mut out = Vec::new();
+    for value in values {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        out.push(trimmed.to_string());
+    }
+    if out.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut deduped = Vec::new();
+    let mut seen = HashSet::new();
+    for model in out {
+        if seen.insert(model.clone()) {
+            deduped.push(model);
+        }
+    }
+    Ok(deduped)
+}
+
+fn build_model_targets(
+    override_models: Vec<String>,
     override_provider: Option<String>,
-) -> Result<(LlmClient, Provider, String), String> {
+) -> Result<Vec<ModelTarget>, String> {
     let cfg = Config::load();
     let providers = cfg.configured_llm_providers();
-    let provider = if let Some(provider_id) = override_provider {
+    let forced_provider = if let Some(provider_id) = override_provider {
         let parsed = provider_from_id(provider_id.trim().to_lowercase().as_str())
             .ok_or_else(|| format!("invalid provider '{}'", provider_id))?;
         if !providers.iter().any(|c| c.provider == parsed) {
@@ -378,30 +483,105 @@ fn build_llm_client(
                 parsed.id()
             ));
         }
-        parsed
-    } else if let Some(model) = override_model.as_ref() {
-        // OpenRouter-style ids are "<provider>/<model>" and should route to OpenRouter client.
-        if model.contains('/') && providers.iter().any(|c| c.provider == Provider::OpenRouter) {
+        Some(parsed)
+    } else {
+        None
+    };
+
+    let models = if override_models.is_empty() {
+        vec![String::new()]
+    } else {
+        override_models
+    };
+
+    let mut targets = Vec::new();
+    for override_model in models {
+        let provider = if let Some(p) = forced_provider {
+            p
+        } else if !override_model.is_empty()
+            && override_model.contains('/')
+            && providers.iter().any(|c| c.provider == Provider::OpenRouter)
+        {
+            // OpenRouter-style ids are "<provider>/<model>" and should route to OpenRouter client.
             Provider::OpenRouter
         } else {
             cfg.preferred_llm_provider(&providers).ok_or_else(|| {
                 "no LLM provider configured (set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY)"
                     .to_string()
             })?
+        };
+
+        let provider_cfg = providers
+            .iter()
+            .find(|c| c.provider == provider)
+            .ok_or_else(|| format!("provider '{}' is not configured", provider.id()))?;
+        let client = client::create_client(provider_cfg).map_err(|e| e.to_string())?;
+        let model = if override_model.is_empty() {
+            cfg.model_for_provider(provider)
+        } else {
+            override_model
+        };
+        targets.push(ModelTarget {
+            client,
+            provider,
+            model,
+        });
+    }
+    Ok(targets)
+}
+
+async fn run_cases_for_target(
+    cases: &[&EvalCase],
+    target: &ModelTarget,
+    dispatcher: &ToolDispatcher,
+    parallel: bool,
+    max_parallel: usize,
+) -> Result<Vec<EvalResult>, String> {
+    let mut results = Vec::with_capacity(cases.len());
+    if !parallel {
+        for eval_case in cases {
+            let started = Instant::now();
+            let result = run_case(&target.client, &target.model, dispatcher, eval_case).await;
+            let elapsed_ms = started.elapsed().as_millis() as u64;
+            results.push(build_eval_result(
+                (*eval_case).clone(),
+                target.model.clone(),
+                elapsed_ms,
+                result,
+            ));
         }
-    } else {
-        cfg.preferred_llm_provider(&providers).ok_or_else(|| {
-            "no LLM provider configured (set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY)"
-                .to_string()
-        })?
-    };
-    let provider_cfg = providers
-        .iter()
-        .find(|c| c.provider == provider)
-        .ok_or_else(|| "preferred provider was not configured".to_string())?;
-    let client = client::create_client(provider_cfg).map_err(|e| e.to_string())?;
-    let model = override_model.unwrap_or_else(|| cfg.model_for_provider(provider));
-    Ok((client, provider, model))
+        return Ok(results);
+    }
+
+    let max_parallel = max_parallel.max(1);
+    let mut join_set = JoinSet::new();
+    let mut index = 0usize;
+    while index < cases.len() || !join_set.is_empty() {
+        while join_set.len() < max_parallel && index < cases.len() {
+            let eval_case = (*cases[index]).clone();
+            index += 1;
+            let llm_client = target.client.clone();
+            let model = target.model.clone();
+            let dispatcher = dispatcher.clone();
+            join_set.spawn(async move {
+                let started = Instant::now();
+                let result = run_case(&llm_client, &model, &dispatcher, &eval_case).await;
+                (
+                    eval_case,
+                    model,
+                    started.elapsed().as_millis() as u64,
+                    result,
+                )
+            });
+        }
+
+        if let Some(joined) = join_set.join_next().await {
+            let (eval_case, model, elapsed_ms, result) =
+                joined.map_err(|e| format!("parallel task join error: {e}"))?;
+            results.push(build_eval_result(eval_case, model, elapsed_ms, result));
+        }
+    }
+    Ok(results)
 }
 
 async fn run_case(

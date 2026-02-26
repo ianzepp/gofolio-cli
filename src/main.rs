@@ -36,8 +36,11 @@ enum Command {
         #[arg(long = "case", value_delimiter = ',')]
         case_ids: Option<Vec<String>>,
         /// Model id override (defaults to configured provider model)
-        #[arg(long)]
+        #[arg(long, conflicts_with = "models")]
         model: Option<String>,
+        /// Comma-separated model ids to run as a matrix (overrides --model)
+        #[arg(long, value_delimiter = ',')]
+        models: Option<Vec<String>>,
         /// LLM provider override (anthropic|openrouter|openai)
         #[arg(long)]
         provider: Option<String>,
@@ -53,6 +56,9 @@ enum Command {
         /// Run test cases in parallel (in-process async tasks)
         #[arg(long, default_value_t = false)]
         parallel: bool,
+        /// Maximum number of cases to run concurrently when --parallel is enabled
+        #[arg(long)]
+        max_parallel: Option<usize>,
         /// List available suites and exit
         #[arg(long, default_value_t = false)]
         list_suites: bool,
@@ -88,22 +94,26 @@ async fn main() {
             suite,
             case_ids,
             model,
+            models,
             provider,
             evals_root,
             fixture_dir,
             live,
             parallel,
+            max_parallel,
             list_suites,
         } => {
             let args = evals::TestArgs {
                 suite,
                 case_ids,
                 model,
+                models,
                 provider,
                 evals_root: evals_root.map(std::path::PathBuf::from),
                 fixture_dir: fixture_dir.map(std::path::PathBuf::from),
                 live,
                 parallel,
+                max_parallel,
                 list_suites,
             };
             if let Err(e) = evals::run(args).await {
