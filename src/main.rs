@@ -67,6 +67,12 @@ async fn main() {
                             "anthropic_api_key" => {
                                 cfg.anthropic_api_key = Some(value.to_string());
                             }
+                            "openrouter_api_key" => {
+                                cfg.openrouter_api_key = Some(value.to_string());
+                            }
+                            "openai_api_key" => {
+                                cfg.openai_api_key = Some(value.to_string());
+                            }
                             "model" => cfg.model = Some(value.to_string()),
                             "langchain_api_key" => {
                                 cfg.langchain_api_key = Some(value.to_string());
@@ -77,7 +83,7 @@ async fn main() {
                             _ => {
                                 eprintln!("Unknown config key: {key}");
                                 eprintln!(
-                                    "Valid keys: url, token, anthropic_api_key, model, langchain_api_key, langchain_project"
+                                    "Valid keys: url, token, anthropic_api_key, openrouter_api_key, openai_api_key, model, langchain_api_key, langchain_project"
                                 );
                                 std::process::exit(1);
                             }
@@ -111,6 +117,22 @@ async fn main() {
                 println!(
                     "anthropic_key  = {}",
                     if cfg.anthropic_api_key.is_some() {
+                        "***"
+                    } else {
+                        "(not set)"
+                    }
+                );
+                println!(
+                    "openrouter_key = {}",
+                    if cfg.openrouter_api_key.is_some() {
+                        "***"
+                    } else {
+                        "(not set)"
+                    }
+                );
+                println!(
+                    "openai_key     = {}",
+                    if cfg.openai_api_key.is_some() {
                         "***"
                     } else {
                         "(not set)"

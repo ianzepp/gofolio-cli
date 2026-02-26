@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use tracing::warn;
 
-use super::types::{AgentError, ChatResponse, ContentBlock, Message, Tool};
+use super::ModelEntry;
+use crate::agent::types::{AgentError, ChatResponse, ContentBlock, Message, Tool};
 
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const MODELS_URL: &str = "https://api.anthropic.com/v1/models";
@@ -10,6 +11,7 @@ const API_VERSION: &str = "2023-06-01";
 const REQUEST_TIMEOUT_SECS: u64 = 120;
 const CONNECT_TIMEOUT_SECS: u64 = 10;
 
+#[derive(Clone)]
 pub struct AnthropicClient {
     http: reqwest::Client,
     api_key: String,
@@ -58,13 +60,78 @@ impl AnthropicClient {
             .map_err(|e| AgentError::ApiRequest(e.to_string()))?;
 
         if status != 200 {
-            return Err(AgentError::ApiResponse {
-                status,
-                body: text,
-            });
+            return Err(AgentError::ApiResponse { status, body: text });
         }
 
         parse_response(&text)
+    }
+
+    pub async fn fetch_models(&self) -> Vec<ModelEntry> {
+        match self.fetch_models_from_api().await {
+            Ok(models) if !models.is_empty() => models,
+            Ok(_) => {
+                warn!("Models API returned empty list, using fallback");
+                fallback_models()
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to fetch models from API, using fallback");
+                fallback_models()
+            }
+        }
+    }
+
+    async fn fetch_models_from_api(&self) -> Result<Vec<ModelEntry>, AgentError> {
+        let mut all_models = Vec::new();
+        let mut after_id: Option<String> = None;
+
+        loop {
+            let mut req = self
+                .http
+                .get(MODELS_URL)
+                .header("x-api-key", &self.api_key)
+                .header("anthropic-version", API_VERSION)
+                .query(&[("limit", "1000")]);
+
+            if let Some(ref cursor) = after_id {
+                req = req.query(&[("after_id", cursor.as_str())]);
+            }
+
+            let response = req
+                .send()
+                .await
+                .map_err(|e| AgentError::ApiRequest(e.to_string()))?;
+
+            let status = response.status().as_u16();
+            let text = response
+                .text()
+                .await
+                .map_err(|e| AgentError::ApiRequest(e.to_string()))?;
+
+            if status != 200 {
+                return Err(AgentError::ApiResponse { status, body: text });
+            }
+
+            let resp: ModelsResponse =
+                serde_json::from_str(&text).map_err(|e| AgentError::ApiParse(e.to_string()))?;
+
+            let has_more = resp.data.len() == 1000;
+            let last_id = resp.data.last().map(|m| m.id.clone());
+
+            for m in resp.data {
+                all_models.push(ModelEntry {
+                    id: m.id,
+                    display_name: m.display_name,
+                });
+            }
+
+            if has_more {
+                after_id = last_id;
+            } else {
+                break;
+            }
+        }
+
+        Ok(all_models)
     }
 }
 
@@ -92,13 +159,6 @@ struct Usage {
     output_tokens: u64,
 }
 
-/// A model entry from the Anthropic Models API.
-#[derive(Debug, Clone)]
-pub struct ModelEntry {
-    pub id: String,
-    pub display_name: String,
-}
-
 /// Hardcoded fallback models if the API call fails.
 const FALLBACK_MODELS: &[(&str, &str)] = &[
     ("claude-opus-4-6", "Claude Opus 4.6"),
@@ -120,83 +180,6 @@ struct ModelsResponse {
 struct ModelInfo {
     id: String,
     display_name: String,
-}
-
-/// Fetch available models from the Anthropic API, with hardcoded fallback.
-pub async fn fetch_models(api_key: &str) -> Vec<ModelEntry> {
-    match fetch_models_from_api(api_key).await {
-        Ok(models) if !models.is_empty() => models,
-        Ok(_) => {
-            warn!("Models API returned empty list, using fallback");
-            fallback_models()
-        }
-        Err(e) => {
-            warn!(error = %e, "Failed to fetch models from API, using fallback");
-            fallback_models()
-        }
-    }
-}
-
-async fn fetch_models_from_api(api_key: &str) -> Result<Vec<ModelEntry>, AgentError> {
-    let http = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| AgentError::ApiRequest(e.to_string()))?;
-
-    let mut all_models = Vec::new();
-    let mut after_id: Option<String> = None;
-
-    // Paginate through all models (limit=1000 per page)
-    loop {
-        let mut req = http
-            .get(MODELS_URL)
-            .header("x-api-key", api_key)
-            .header("anthropic-version", API_VERSION)
-            .query(&[("limit", "1000")]);
-
-        if let Some(ref cursor) = after_id {
-            req = req.query(&[("after_id", cursor.as_str())]);
-        }
-
-        let response = req
-            .send()
-            .await
-            .map_err(|e| AgentError::ApiRequest(e.to_string()))?;
-
-        let status = response.status().as_u16();
-        let text = response
-            .text()
-            .await
-            .map_err(|e| AgentError::ApiRequest(e.to_string()))?;
-
-        if status != 200 {
-            return Err(AgentError::ApiResponse {
-                status,
-                body: text,
-            });
-        }
-
-        let resp: ModelsResponse =
-            serde_json::from_str(&text).map_err(|e| AgentError::ApiParse(e.to_string()))?;
-
-        let has_more = resp.data.len() == 1000;
-        let last_id = resp.data.last().map(|m| m.id.clone());
-
-        for m in resp.data {
-            all_models.push(ModelEntry {
-                id: m.id,
-                display_name: m.display_name,
-            });
-        }
-
-        if has_more {
-            after_id = last_id;
-        } else {
-            break;
-        }
-    }
-
-    Ok(all_models)
 }
 
 fn fallback_models() -> Vec<ModelEntry> {

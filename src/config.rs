@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
+use crate::agent::client::Provider;
+
 /// Auth sub-object matching the original config.json structure.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct AuthConfig {
@@ -27,6 +29,10 @@ pub struct Config {
     /// Rust CLI extension — not present in original config.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anthropic_api_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub openrouter_api_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub openai_api_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub langchain_api_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -121,6 +127,35 @@ impl Config {
         std::env::var("ANTHROPIC_API_KEY")
             .ok()
             .or_else(|| self.anthropic_api_key.clone())
+    }
+
+    /// Resolve OpenRouter API key: env > config.
+    pub fn openrouter_api_key(&self) -> Option<String> {
+        std::env::var("OPENROUTER_API_KEY")
+            .ok()
+            .or_else(|| self.openrouter_api_key.clone())
+    }
+
+    /// Resolve OpenAI API key: env > config.
+    pub fn openai_api_key(&self) -> Option<String> {
+        std::env::var("OPENAI_API_KEY")
+            .ok()
+            .or_else(|| self.openai_api_key.clone())
+    }
+
+    /// Detect the LLM provider by checking API keys in priority order:
+    /// Anthropic > OpenRouter > OpenAI.
+    pub fn detect_llm_provider(&self) -> Option<(Provider, String)> {
+        if let Some(key) = self.anthropic_api_key() {
+            return Some((Provider::Anthropic, key));
+        }
+        if let Some(key) = self.openrouter_api_key() {
+            return Some((Provider::OpenRouter, key));
+        }
+        if let Some(key) = self.openai_api_key() {
+            return Some((Provider::OpenAI, key));
+        }
+        None
     }
 
     /// Resolve model: env > config > default.

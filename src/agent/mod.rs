@@ -7,7 +7,7 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-use self::client::AnthropicClient;
+use self::client::LlmClient;
 use self::types::{AgentError, Content, ContentBlock, Message, ToolCallRecord};
 use crate::api::GhostfolioClient;
 use crate::langsmith::{LangSmithConfig, Trace};
@@ -36,7 +36,7 @@ pub enum AgentEvent {
 /// Run the agent ReAct loop in a background task.
 pub fn spawn_agent(
     api_client: GhostfolioClient,
-    anthropic_key: String,
+    llm_client: LlmClient,
     model: String,
     history: Vec<Message>,
     langsmith: Option<LangSmithConfig>,
@@ -45,7 +45,7 @@ pub fn spawn_agent(
     tokio::spawn(async move {
         match run_loop(
             &api_client,
-            &anthropic_key,
+            &llm_client,
             &model,
             history,
             langsmith.as_ref(),
@@ -63,13 +63,12 @@ pub fn spawn_agent(
 
 async fn run_loop(
     api_client: &GhostfolioClient,
-    anthropic_key: &str,
+    llm_client: &LlmClient,
     model: &str,
     mut messages: Vec<Message>,
     langsmith: Option<&LangSmithConfig>,
     tx: &mpsc::UnboundedSender<AgentEvent>,
 ) -> Result<(), AgentError> {
-    let client = AnthropicClient::new(anthropic_key.to_string())?;
     let tools = tools::all_tools();
 
     // Extract user input for the trace
@@ -90,7 +89,7 @@ async fn run_loop(
         );
 
         let llm_start = Instant::now();
-        let response = client
+        let response = llm_client
             .chat(model, MAX_TOKENS, SYSTEM_PROMPT, &messages, Some(&tools))
             .await?;
         let llm_duration_ms = llm_start.elapsed().as_millis() as u64;

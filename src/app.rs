@@ -6,7 +6,7 @@ use ratatui::DefaultTerminal;
 use tokio::sync::mpsc;
 use tracing::info;
 
-use crate::agent::client::{self, ModelEntry};
+use crate::agent::client::{self, LlmClient, ModelEntry};
 use crate::agent::types::{Content, Message, ToolCallRecord};
 use crate::agent::{self, AgentEvent};
 use crate::api::GhostfolioClient;
@@ -68,6 +68,7 @@ pub struct AppState {
 
     // Internal state
     config: Config,
+    llm_client: Option<LlmClient>,
     api_client: Option<GhostfolioClient>,
     history: Vec<Message>,
     agent_rx: Option<mpsc::UnboundedReceiver<AgentEvent>>,
@@ -82,6 +83,10 @@ impl AppState {
         let config = Config::load();
         let model = config.model();
         let langsmith = LangSmithConfig::from_config(&config);
+
+        let llm_client = config
+            .detect_llm_provider()
+            .and_then(|(provider, key)| client::create_client(&provider, key).ok());
 
         // Check for pre-configured auth
         let has_token = config.access_token().is_some();
@@ -116,6 +121,7 @@ impl AppState {
             market_quotes: Vec::new(),
             portfolio: None,
             config,
+            llm_client,
             api_client: None,
             history: Vec::new(),
             agent_rx: None,
@@ -238,8 +244,10 @@ impl AppState {
             self.loading = false;
             return;
         };
-        let Some(api_key) = self.config.anthropic_api_key() else {
-            self.push_warning("No ANTHROPIC_API_KEY configured.");
+        let Some(ref llm_client) = self.llm_client else {
+            self.push_warning(
+                "No LLM API key configured. Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY.",
+            );
             self.loading = false;
             return;
         };
@@ -250,7 +258,7 @@ impl AppState {
 
         agent::spawn_agent(
             api_client.clone(),
-            api_key,
+            llm_client.clone(),
             self.model.clone(),
             self.history.clone(),
             self.langsmith.clone(),
@@ -336,8 +344,8 @@ impl AppState {
     }
 
     async fn load_models(&mut self) {
-        if let Some(api_key) = self.config.anthropic_api_key() {
-            self.available_models = client::fetch_models(&api_key).await;
+        if let Some(ref c) = self.llm_client {
+            self.available_models = c.fetch_models().await;
         }
     }
 
@@ -418,9 +426,8 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
         terminal.draw(|frame| crate::ui::render(frame, &state))?;
 
         // Poll for events with a short timeout so we can check agent channel
-        let has_event = tokio::task::block_in_place(|| {
-            event::poll(std::time::Duration::from_millis(50))
-        })?;
+        let has_event =
+            tokio::task::block_in_place(|| event::poll(std::time::Duration::from_millis(50)))?;
 
         // Check warmup channel
         if let Some(ref mut rx) = state.warmup_rx {
@@ -534,11 +541,8 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
                                     let filtered = m.filtered_items();
                                     if let Some((_idx, item)) = filtered.get(m.selected) {
                                         // Extract model ID (before " (" if display name appended)
-                                        let selected = item
-                                            .split(" (")
-                                            .next()
-                                            .unwrap_or(item)
-                                            .to_string();
+                                        let selected =
+                                            item.split(" (").next().unwrap_or(item).to_string();
                                         info!(selected = %selected, "modal: selected");
                                         state.model = selected.clone();
                                         state.config.model = Some(selected.clone());
@@ -638,7 +642,10 @@ fn parse_chart_data(data: &serde_json::Value) -> Option<ChartData> {
                 .iter()
                 .filter_map(|v| v.as_f64().map(|f| f.max(0.0) as u64))
                 .collect();
-            Some(ChartData::Sparkline { title, data: values })
+            Some(ChartData::Sparkline {
+                title,
+                data: values,
+            })
         }
         "bar" => {
             let title = data["title"].as_str().unwrap_or("Chart").to_string();
@@ -652,7 +659,11 @@ fn parse_chart_data(data: &serde_json::Value) -> Option<ChartData> {
                 .iter()
                 .filter_map(|v| v.as_f64().map(|f| f.max(0.0) as u64))
                 .collect();
-            Some(ChartData::Bar { title, labels, values })
+            Some(ChartData::Bar {
+                title,
+                labels,
+                values,
+            })
         }
         _ => None,
     }
