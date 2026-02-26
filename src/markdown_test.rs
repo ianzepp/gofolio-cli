@@ -17,9 +17,11 @@ fn text(lines: &[Line]) -> Vec<String> {
 }
 
 fn has_style(lines: &[Line], modifier: Modifier) -> bool {
-    lines
-        .iter()
-        .any(|l| l.spans.iter().any(|s| s.style.add_modifier.contains(modifier)))
+    lines.iter().any(|l| {
+        l.spans
+            .iter()
+            .any(|s| s.style.add_modifier.contains(modifier))
+    })
 }
 
 fn has_color(lines: &[Line], color: ratatui::style::Color) -> bool {

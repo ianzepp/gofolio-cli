@@ -12,9 +12,15 @@ pub fn render(input: &str, width: usize) -> Vec<Line<'static>> {
     while i < lines.len() {
         let line = lines[i];
 
-        // Empty line
+        // Empty line — collapse consecutive blanks into one
         if line.trim().is_empty() {
-            result.push(Line::from(""));
+            // Only add a blank if the last line wasn't already blank
+            let last_is_blank = result.last().is_some_and(|l: &Line<'_>| {
+                l.spans.is_empty() || (l.spans.len() == 1 && l.spans[0].content.is_empty())
+            });
+            if !last_is_blank && !result.is_empty() {
+                result.push(Line::from(""));
+            }
             i += 1;
             continue;
         }
@@ -113,7 +119,21 @@ pub fn render(input: &str, width: usize) -> Vec<Line<'static>> {
         result.extend(wrap_line(para_line, width));
     }
 
+    // Strip leading blank lines
+    while result.first().is_some_and(|l| is_blank_line(l)) {
+        result.remove(0);
+    }
+
+    // Strip trailing blank lines
+    while result.last().is_some_and(|l| is_blank_line(l)) {
+        result.pop();
+    }
+
     result
+}
+
+fn is_blank_line(line: &Line<'_>) -> bool {
+    line.spans.is_empty() || (line.spans.len() == 1 && line.spans[0].content.trim().is_empty())
 }
 
 /// Check if a line starts a block-level element.
@@ -133,9 +153,10 @@ fn is_block_start(line: &str) -> bool {
 /// Check if text is a horizontal rule: 3+ of the same char (-, *, _), optionally with spaces.
 fn is_horizontal_rule(text: &str) -> bool {
     let chars: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
-    chars.len() >= 3 && (chars.iter().all(|&c| c == '-')
-        || chars.iter().all(|&c| c == '*')
-        || chars.iter().all(|&c| c == '_'))
+    chars.len() >= 3
+        && (chars.iter().all(|&c| c == '-')
+            || chars.iter().all(|&c| c == '*')
+            || chars.iter().all(|&c| c == '_'))
 }
 
 /// Check if a line contains box-drawing characters.
@@ -400,9 +421,7 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
                     .push(Span::styled(trimmed.to_string(), style));
                 col += trimmed.len();
             } else {
-                rows.last_mut()
-                    .unwrap()
-                    .push(Span::styled(word, style));
+                rows.last_mut().unwrap().push(Span::styled(word, style));
                 col += word_len;
             }
         }
