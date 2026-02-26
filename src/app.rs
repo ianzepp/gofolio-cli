@@ -4,7 +4,6 @@ use std::time::Instant;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::DefaultTerminal;
 use tokio::sync::mpsc;
-use tracing::info;
 
 use crate::agent::client::{self, LlmClient, ModelEntry, Provider, ProviderConfig};
 use crate::agent::types::{Content, Message, ToolCallRecord};
@@ -15,7 +14,7 @@ use crate::langsmith::LangSmithConfig;
 use crate::market::{self, MarketQuote};
 use crate::provider_cache;
 use crate::ui::login::{LoginField, LoginState};
-use crate::ui::modal::ModalState;
+use crate::ui::modal::{ModalItem, ModalState};
 use crate::warmup::{self, PortfolioSummary};
 
 #[derive(Debug, Clone)]
@@ -47,7 +46,6 @@ pub enum Screen {
 
 #[derive(Debug, Clone)]
 enum ModelModalValue {
-    Provider(Provider),
     Model { provider: Provider, id: String },
 }
 
@@ -70,7 +68,6 @@ pub struct AppState {
     pub feedback: Option<i8>, // 1 = thumbs up, -1 = thumbs down
     pub scroll_offset: u16,   // 0 = at bottom, >0 = scrolled up by N rows
     pub modal: Option<ModalState>,
-    pub available_models: Vec<ModelEntry>,
     pub market_quotes: Vec<MarketQuote>,
     pub portfolio: Option<PortfolioSummary>,
 
@@ -79,6 +76,7 @@ pub struct AppState {
     llm_providers: Vec<ProviderConfig>,
     provider_key_statuses: Vec<ProviderKeyStatus>,
     llm_clients: Vec<(Provider, LlmClient)>,
+    provider_models: Vec<(Provider, Vec<ModelEntry>)>,
     active_provider: Option<Provider>,
     model_modal_values: Vec<Option<ModelModalValue>>,
     api_client: Option<GhostfolioClient>,
@@ -155,13 +153,13 @@ impl AppState {
             feedback: None,
             scroll_offset: 0,
             modal: None,
-            available_models: Vec::new(),
             market_quotes: Vec::new(),
             portfolio: None,
             config,
             llm_providers,
             provider_key_statuses,
             llm_clients,
+            provider_models: Vec::new(),
             active_provider,
             model_modal_values: Vec::new(),
             api_client: None,
@@ -379,20 +377,30 @@ impl AppState {
             .find_map(|(p, c)| (*p == provider).then_some(c))
     }
 
+    fn models_for_provider(&self, provider: Provider) -> &[ModelEntry] {
+        self.provider_models
+            .iter()
+            .find_map(|(p, models)| (*p == provider).then_some(models.as_slice()))
+            .unwrap_or(&[])
+    }
+
+    fn set_models_for_provider(&mut self, provider: Provider, models: Vec<ModelEntry>) {
+        if let Some((_, existing)) = self
+            .provider_models
+            .iter_mut()
+            .find(|(p, _)| *p == provider)
+        {
+            *existing = models;
+        } else {
+            self.provider_models.push((provider, models));
+        }
+    }
+
     fn open_model_modal(&mut self) {
-        let mut items = Vec::new();
+        let mut items: Vec<ModalItem> = Vec::new();
         let mut values = Vec::new();
         let mut missing_notes = Vec::new();
         for status in &self.provider_key_statuses {
-            let cfg = self
-                .llm_providers
-                .iter()
-                .find(|c| c.provider == status.provider);
-
-            let adapter = cfg
-                .map(|c| c.adapter.id().to_string())
-                .unwrap_or_else(|| "-".to_string());
-
             if !status.configured {
                 missing_notes.push(format!(
                     "Missing {} ({})",
@@ -402,87 +410,114 @@ impl AppState {
                 continue;
             }
 
-            match &status.format {
+            if self.client_for_provider(status.provider).is_none() {
+                continue;
+            }
+            let heading = match &status.format {
                 Some(KeyFormatStatus::Expected) => {
-                    items.push(format!("{} [{}]", status.provider.label(), adapter));
+                    format!("{}", status.provider.label().to_uppercase())
                 }
                 Some(KeyFormatStatus::LooksLike(other)) => {
-                    items.push(format!(
-                        "{} [{}] (key looks like {})",
-                        status.provider.label(),
-                        adapter,
+                    format!(
+                        "{} (key looks like {})",
+                        status.provider.label().to_uppercase(),
                         other.label()
-                    ));
+                    )
                 }
                 Some(KeyFormatStatus::Unknown) => {
-                    items.push(format!(
-                        "{} [{}] (unrecognized key format)",
-                        status.provider.label(),
-                        adapter
-                    ));
+                    format!(
+                        "{} (unrecognized key format)",
+                        status.provider.label().to_uppercase()
+                    )
                 }
-                None => {
-                    items.push(format!("{} [{}]", status.provider.label(), adapter));
-                }
+                None => status.provider.label().to_uppercase(),
+            };
+            items.push(ModalItem {
+                text: heading,
+                selectable: false,
+            });
+            values.push(None);
+
+            let models = self.models_for_provider(status.provider);
+            let model_rows: Vec<ModelEntry> = if models.is_empty() {
+                vec![ModelEntry {
+                    id: client::default_model_for_provider(status.provider).to_string(),
+                    display_name: "default".to_string(),
+                }]
+            } else {
+                models.to_vec()
+            };
+            for model in model_rows {
+                items.push(ModalItem {
+                    text: format!("* {}", model.id),
+                    selectable: true,
+                });
+                values.push(Some(ModelModalValue::Model {
+                    provider: status.provider,
+                    id: model.id,
+                }));
             }
 
-            if self.client_for_provider(status.provider).is_some() {
-                values.push(Some(ModelModalValue::Provider(status.provider)));
-            } else {
-                values.push(None);
-            }
+            items.push(ModalItem {
+                text: String::new(),
+                selectable: false,
+            });
+            values.push(None);
         }
 
         if !missing_notes.is_empty() {
-            if !items.is_empty() {
-                items.push("".to_string());
+            if !items.is_empty()
+                && !matches!(items.last(), Some(ModalItem { text, .. }) if text.is_empty())
+            {
+                items.push(ModalItem {
+                    text: String::new(),
+                    selectable: false,
+                });
                 values.push(None);
             }
             for note in missing_notes {
-                items.push(note);
+                items.push(ModalItem {
+                    text: note,
+                    selectable: false,
+                });
                 values.push(None);
             }
         }
 
         if items.is_empty() {
-            items.push("No providers configured".to_string());
+            items.push(ModalItem {
+                text: "No providers configured".to_string(),
+                selectable: false,
+            });
             values.push(None);
         }
 
         self.model_modal_values = values;
-        self.modal = Some(ModalState::new("Select Provider".to_string(), items));
+        self.modal = Some(ModalState::new_items("Select Model".to_string(), items));
+        if let Some(ref mut modal) = self.modal {
+            modal.normalize_selection();
+        }
     }
 
-    fn open_model_modal_for_provider(&mut self, provider: Provider) {
-        let items: Vec<String> = if self.available_models.is_empty() {
-            vec![client::default_model_for_provider(provider).to_string()]
-        } else {
-            self.available_models
-                .iter()
-                .map(|m| format!("{} ({})", m.id, m.display_name))
-                .collect()
-        };
-        self.model_modal_values = items
-            .iter()
-            .map(|item| {
-                let id = item.split(" (").next().unwrap_or(item).to_string();
-                Some(ModelModalValue::Model { provider, id })
-            })
-            .collect();
-        self.modal = Some(ModalState::new("Select Model".to_string(), items));
-    }
-
-    async fn load_models(&mut self, provider: Provider) {
+    async fn load_models_for_provider(&mut self, provider: Provider) {
         if let Some(c) = self.client_for_provider(provider) {
             let from_api = c.fetch_models().await;
             if from_api.is_empty() {
-                self.available_models = provider_cache::load(provider).unwrap_or_default();
+                self.set_models_for_provider(
+                    provider,
+                    provider_cache::load(provider).unwrap_or_default(),
+                );
             } else {
                 provider_cache::save(provider, &from_api);
-                self.available_models = from_api;
+                self.set_models_for_provider(provider, from_api);
             }
-        } else {
-            self.available_models.clear();
+        }
+    }
+
+    async fn load_all_models(&mut self) {
+        let providers: Vec<Provider> = self.llm_providers.iter().map(|c| c.provider).collect();
+        for provider in providers {
+            self.load_models_for_provider(provider).await;
         }
     }
 
@@ -500,7 +535,7 @@ impl AppState {
                 self.push_system("Connected. Loading portfolio data...");
                 if let Some(provider) = self.active_provider {
                     self.model = self.config.model_for_provider(provider);
-                    self.load_models(provider).await;
+                    self.load_all_models().await;
                 }
             }
             Err(_) => {
@@ -526,7 +561,7 @@ impl AppState {
                 self.push_system("Connected. Loading portfolio data...");
                 if let Some(provider) = self.active_provider {
                     self.model = self.config.model_for_provider(provider);
-                    self.load_models(provider).await;
+                    self.load_all_models().await;
                 }
             }
             Err(e) => {
@@ -688,20 +723,6 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
                                             state.model_modal_values.get(*orig_idx).cloned()
                                     {
                                         match value {
-                                            ModelModalValue::Provider(provider) => {
-                                                state.active_provider = Some(provider);
-                                                state.config.llm_provider =
-                                                    Some(provider.id().to_string());
-                                                state.model =
-                                                    state.config.model_for_provider(provider);
-                                                info!(
-                                                    provider = %provider.label(),
-                                                    "modal: selected provider"
-                                                );
-                                                state.load_models(provider).await;
-                                                state.open_model_modal_for_provider(provider);
-                                                continue;
-                                            }
                                             ModelModalValue::Model { provider, id } => {
                                                 state.active_provider = Some(provider);
                                                 state.model = id.clone();
@@ -727,12 +748,14 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
                                 if let Some(ref mut m) = state.modal {
                                     m.filter.pop();
                                     m.selected = 0;
+                                    m.normalize_selection();
                                 }
                             }
                             KeyCode::Char(c) => {
                                 if let Some(ref mut m) = state.modal {
                                     m.filter.push(c);
                                     m.selected = 0;
+                                    m.normalize_selection();
                                 }
                             }
                             _ => {}
