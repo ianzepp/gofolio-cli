@@ -1,0 +1,10 @@
+- id: 'div-001'
+  description: 'Dividend income inquiry'
+  query: 'How much dividend income have I earned?'
+  category: 'dividends'
+  difficulty: 'straightforward'
+  expected_tools: ['get_dividends']
+  must_contain: ['dividend']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'dividends']

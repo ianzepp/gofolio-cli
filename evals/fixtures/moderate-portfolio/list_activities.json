@@ -1,14 +1,45 @@
 {
   "count": 4,
   "activities": [
-    { "id": "act-1", "type": "BUY", "symbol": "AAPL", "date": "2025-11-01" },
-    { "id": "act-2", "type": "BUY", "symbol": "MSFT", "date": "2025-10-03" },
+    {
+      "id": "act-1",
+      "type": "BUY",
+      "symbol": "AAPL",
+      "date": "2025-11-01",
+      "quantity": 150,
+      "unitPrice": 172.30,
+      "fee": 4.95,
+      "currency": "USD"
+    },
+    {
+      "id": "act-2",
+      "type": "BUY",
+      "symbol": "MSFT",
+      "date": "2025-10-03",
+      "quantity": 80,
+      "unitPrice": 388.50,
+      "fee": 4.95,
+      "currency": "USD"
+    },
     {
       "id": "act-3",
       "type": "DIVIDEND",
       "symbol": "AAPL",
-      "date": "2025-12-15"
+      "date": "2025-12-15",
+      "quantity": 150,
+      "unitPrice": 0.96,
+      "fee": 0,
+      "currency": "USD"
     },
-    { "id": "act-4", "type": "BUY", "symbol": "GOOGL", "date": "2025-12-20" }
+    {
+      "id": "act-4",
+      "type": "BUY",
+      "symbol": "GOOGL",
+      "date": "2025-12-20",
+      "quantity": 45,
+      "unitPrice": 155.80,
+      "fee": 4.95,
+      "currency": "USD"
+    }
   ]
 }

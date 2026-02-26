@@ -1,0 +1,10 @@
+- id: 'act-001'
+  description: 'Recent trades and transactions'
+  query: 'Show me my recent trades and transactions'
+  category: 'activities'
+  difficulty: 'straightforward'
+  expected_tools: ['list_activities']
+  must_contain: ['BUY']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'activities']

@@ -1,0 +1,21 @@
+- id: 'div-002'
+  description: 'Chart dividend income by quarter'
+  query: 'Chart my dividend income by quarter'
+  category: 'dividends'
+  difficulty: 'ambiguous'
+  expected_tools: ['get_dividends', 'chart_bar']
+  must_contain: ['dividend']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['dividends', 'charts', 'multi-tool']
+
+- id: 'div-003'
+  description: 'Dividend yield relative to total investment'
+  query: 'What percentage of my total investment comes back as dividends?'
+  category: 'dividends'
+  difficulty: 'ambiguous'
+  expected_tools: ['get_dividends', 'get_portfolio_summary']
+  must_contain: ['%']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['dividends', 'portfolio', 'multi-tool']

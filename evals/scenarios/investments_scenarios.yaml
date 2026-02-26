@@ -1,0 +1,21 @@
+- id: 'inv-002'
+  description: 'Consecutive months investing streak'
+  query: 'How many consecutive months have I been investing?'
+  category: 'investments'
+  difficulty: 'straightforward'
+  expected_tools: ['get_investments']
+  must_contain: ['11']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['investments', 'streak']
+
+- id: 'inv-003'
+  description: 'Chart monthly investment contributions'
+  query: 'Show me a chart of monthly investment contributions'
+  category: 'investments'
+  difficulty: 'ambiguous'
+  expected_tools: ['get_investments', 'chart_sparkline']
+  must_contain: ['investment']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['investments', 'charts', 'multi-tool']

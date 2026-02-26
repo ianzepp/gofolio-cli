@@ -1,0 +1,10 @@
+- id: 'bal-002'
+  description: 'Crypto wallet balance history over time'
+  query: 'How has my crypto wallet balance changed over time?'
+  category: 'balances'
+  difficulty: 'ambiguous'
+  expected_tools: ['list_accounts', 'get_account_balances']
+  must_contain: ['Crypto']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['balances', 'crypto', 'multi-tool']

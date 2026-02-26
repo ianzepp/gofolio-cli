@@ -18,6 +18,9 @@ pub enum ToolDispatcher {
     Mock(MockFixtureSet),
 }
 
+/// Tools that run locally (no API call) and should bypass mock fixtures.
+const LOCAL_TOOLS: &[&str] = &["calculate", "chart_sparkline", "chart_bar"];
+
 impl ToolDispatcher {
     pub async fn dispatch(
         &self,
@@ -26,7 +29,13 @@ impl ToolDispatcher {
     ) -> Result<serde_json::Value, ApiError> {
         match self {
             Self::Live(client) => dispatch(client, tool_name, input).await,
-            Self::Mock(fixtures) => fixtures.dispatch(tool_name, input),
+            Self::Mock(fixtures) => {
+                if LOCAL_TOOLS.contains(&tool_name) {
+                    dispatch_local(tool_name, input)
+                } else {
+                    fixtures.dispatch(tool_name, input)
+                }
+            }
         }
     }
 }
@@ -130,6 +139,20 @@ pub async fn dispatch(
         "chart_sparkline" => charts::sparkline(input).map_err(ApiError::Request),
         "chart_bar" => charts::bar(input).map_err(ApiError::Request),
         _ => Err(ApiError::Request(format!("unknown tool: {tool_name}"))),
+    }
+}
+
+fn dispatch_local(
+    tool_name: &str,
+    input: &serde_json::Value,
+) -> Result<serde_json::Value, ApiError> {
+    match tool_name {
+        "calculate" => calculator::evaluate(input).map_err(ApiError::Request),
+        "chart_sparkline" => charts::sparkline(input).map_err(ApiError::Request),
+        "chart_bar" => charts::bar(input).map_err(ApiError::Request),
+        _ => Err(ApiError::Request(format!(
+            "not a local tool: {tool_name}"
+        ))),
     }
 }
 

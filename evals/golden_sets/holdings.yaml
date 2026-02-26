@@ -1,0 +1,21 @@
+- id: 'hold-001'
+  description: 'Basic holdings listing'
+  query: 'What stocks do I own?'
+  category: 'holdings'
+  difficulty: 'straightforward'
+  expected_tools: ['get_holdings']
+  must_contain: ['AAPL', 'MSFT', 'GOOGL']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'holdings']
+
+- id: 'hold-002'
+  description: 'Detailed holding breakdown for a specific position'
+  query: 'Give me the detailed breakdown of my Apple position'
+  category: 'holdings'
+  difficulty: 'straightforward'
+  expected_tools: ['get_holding_detail']
+  must_contain: ['AAPL', '150']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'holdings', 'detail']

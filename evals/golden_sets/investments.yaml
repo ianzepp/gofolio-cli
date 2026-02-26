@@ -1,0 +1,10 @@
+- id: 'inv-001'
+  description: 'Investment contributions over time'
+  query: 'Show me my investment contributions over time'
+  category: 'investments'
+  difficulty: 'straightforward'
+  expected_tools: ['get_investments']
+  must_contain: ['investment']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'investments']

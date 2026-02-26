@@ -1,0 +1,21 @@
+- id: 'act-002'
+  description: 'Filter activities by dividend type'
+  query: 'Show me only my dividend transactions'
+  category: 'activities'
+  difficulty: 'straightforward'
+  expected_tools: ['list_activities']
+  must_contain: ['DIVIDEND']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['activities', 'filter']
+
+- id: 'act-003'
+  description: 'Count total transactions'
+  query: 'How many transactions have I made in total?'
+  category: 'activities'
+  difficulty: 'straightforward'
+  expected_tools: ['list_activities']
+  must_contain: ['4']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['activities', 'count']

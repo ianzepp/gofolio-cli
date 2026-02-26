@@ -1,0 +1,32 @@
+- id: 'hold-003'
+  description: 'Check ownership of a specific stock'
+  query: 'Do I own any Microsoft shares?'
+  category: 'holdings'
+  difficulty: 'straightforward'
+  expected_tools: ['get_holdings']
+  must_contain: ['MSFT']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['holdings', 'specific-stock']
+
+- id: 'hold-004'
+  description: 'Best performing holding with details (multi-tool)'
+  query: 'Which of my holdings has the best performance? Show me details.'
+  category: 'holdings'
+  difficulty: 'ambiguous'
+  expected_tools: ['get_holdings', 'get_holding_detail']
+  must_contain: ['performance']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['holdings', 'multi-tool']
+
+- id: 'hold-005'
+  description: 'Edge case — request details for stock not in portfolio'
+  query: 'Show me details about my Tesla position'
+  category: 'holdings'
+  difficulty: 'edge_case'
+  expected_tools: ['get_holdings']
+  must_contain: []
+  must_not_contain: ['TSLA']
+  expected_verified: true
+  tags: ['holdings', 'edge-case', 'hallucination-guard']

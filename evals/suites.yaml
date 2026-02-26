@@ -3,7 +3,7 @@ quick:
   description: 'Fast smoke test — one case per tool category'
   stage: golden_sets
   fixture: moderate-portfolio
-  cases: [acct-001, mkt-001, fx-001, sym-001, prof-001, bench-001, hist-001]
+  cases: [acct-001, mkt-001, fx-001, sym-001, prof-001, bench-001, hist-001, hold-001, hold-002, div-001, inv-001, act-001, bal-001, spark-001, bar-001]
 
 # Stage 2 suites — run on releases, coverage mapping
 multi-tool:
@@ -16,7 +16,7 @@ adversarial:
   description: 'Edge cases and prompt injection resistance'
   stage: scenarios
   fixture: moderate-portfolio
-  cases: [gen-001, adv-002]
+  cases: [gen-001, adv-002, adv-003, adv-004, hold-005]
 
 regression:
   description: 'Regression tests from known bugs'
@@ -33,6 +33,30 @@ portfolio:
     portfolio:
       risk: moderate
       size: 500000
+
+holdings:
+  description: 'Holdings listing and detail tests'
+  stage: all
+  fixture: moderate-portfolio
+  cases: [hold-001, hold-002, hold-003, hold-004, hold-005]
+
+income:
+  description: 'Dividend and investment contribution tests'
+  stage: all
+  fixture: moderate-portfolio
+  cases: [div-001, div-002, div-003, inv-001, inv-002, inv-003]
+
+activity:
+  description: 'Activity listing and account balance tests'
+  stage: all
+  fixture: moderate-portfolio
+  cases: [act-001, act-002, act-003, bal-001, bal-002]
+
+charts:
+  description: 'Chart rendering tests'
+  stage: all
+  fixture: moderate-portfolio
+  cases: [spark-001, bar-001, div-002, inv-003]
 
 # Full suite — all stages
 comprehensive:

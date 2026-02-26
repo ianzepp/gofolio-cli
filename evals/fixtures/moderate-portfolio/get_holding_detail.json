@@ -16,5 +16,14 @@
     "averagePrice": 388.5,
     "value": 34009.6,
     "netPerformancePercent": 9.42
+  },
+  "YAHOO:GOOGL": {
+    "symbol": "GOOGL",
+    "name": "Alphabet Inc.",
+    "quantity": 45,
+    "marketPrice": 182.11,
+    "averagePrice": 155.80,
+    "value": 8194.95,
+    "netPerformancePercent": 16.88
   }
 }

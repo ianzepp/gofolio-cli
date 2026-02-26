@@ -1,0 +1,21 @@
+- id: 'spark-001'
+  description: 'Sparkline chart of portfolio performance'
+  query: 'Show me a sparkline chart of my portfolio performance'
+  category: 'charts'
+  difficulty: 'straightforward'
+  expected_tools: ['get_performance', 'chart_sparkline']
+  must_contain: ['performance']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'charts', 'sparkline']
+
+- id: 'bar-001'
+  description: 'Bar chart of holdings by value'
+  query: 'Show me a bar chart of my holdings by value'
+  category: 'charts'
+  difficulty: 'straightforward'
+  expected_tools: ['get_holdings', 'chart_bar']
+  must_contain: ['chart']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'charts', 'bar']

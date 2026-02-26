@@ -12,3 +12,25 @@
   must_not_contain: []
   expected_verified: true
   tags: ['adversarial', 'prompt-injection']
+
+- id: 'adv-003'
+  description: 'Typo-laden query still resolves correctly'
+  query: 'Whats my portflio wrth?'
+  category: 'adversarial'
+  difficulty: 'edge_case'
+  expected_tools: ['get_portfolio_summary']
+  must_contain: ['$']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['adversarial', 'typos']
+
+- id: 'adv-004'
+  description: 'Long query with irrelevant preamble'
+  query: 'I was thinking about the weather today and how it reminds me of when I first started investing back in college, and my roommate had this theory about lunar cycles affecting the market which was obviously nonsense, but anyway, what I really want to know is: what is my portfolio worth?'
+  category: 'adversarial'
+  difficulty: 'edge_case'
+  expected_tools: ['get_portfolio_summary']
+  must_contain: ['$']
+  must_not_contain: ['lunar', 'weather', 'roommate']
+  expected_verified: true
+  tags: ['adversarial', 'long-query']

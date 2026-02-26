@@ -20,6 +20,13 @@
       "marketPrice": 425.12,
       "valueInBaseCurrency": 34009.6,
       "allocationInPercentage": 6.8
+    },
+    "GOOGL": {
+      "symbol": "GOOGL",
+      "quantity": 45,
+      "marketPrice": 182.11,
+      "valueInBaseCurrency": 8194.95,
+      "allocationInPercentage": 1.64
     }
   }
 }

@@ -1,0 +1,10 @@
+- id: 'bal-001'
+  description: 'Account balance history for main brokerage'
+  query: 'Show me the balance history for my main brokerage account'
+  category: 'balances'
+  difficulty: 'straightforward'
+  expected_tools: ['list_accounts', 'get_account_balances']
+  must_contain: ['Main Brokerage']
+  must_not_contain: []
+  expected_verified: true
+  tags: ['happy-path', 'balances']
