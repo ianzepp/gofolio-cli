@@ -4,7 +4,7 @@ pub mod openai;
 use crate::agent::types::{AgentError, ChatResponse, Message, Tool};
 
 /// A model entry returned by a provider's models API.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ModelEntry {
     pub id: String,
     pub display_name: String,

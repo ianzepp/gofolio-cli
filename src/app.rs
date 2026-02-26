@@ -13,6 +13,7 @@ use crate::api::GhostfolioClient;
 use crate::config::Config;
 use crate::langsmith::LangSmithConfig;
 use crate::market::{self, MarketQuote};
+use crate::provider_cache;
 use crate::ui::login::{LoginField, LoginState};
 use crate::ui::modal::ModalState;
 use crate::warmup::{self, PortfolioSummary};
@@ -391,7 +392,13 @@ impl AppState {
 
     async fn load_models(&mut self, provider: Provider) {
         if let Some(c) = self.client_for_provider(provider) {
-            self.available_models = c.fetch_models().await;
+            let from_api = c.fetch_models().await;
+            if from_api.is_empty() {
+                self.available_models = provider_cache::load(provider).unwrap_or_default();
+            } else {
+                provider_cache::save(provider, &from_api);
+                self.available_models = from_api;
+            }
         } else {
             self.available_models.clear();
         }

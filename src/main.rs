@@ -5,6 +5,7 @@ mod config;
 mod langsmith;
 mod markdown;
 mod market;
+mod provider_cache;
 mod text;
 mod theme;
 mod tools;
