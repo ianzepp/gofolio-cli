@@ -7,7 +7,105 @@ pub mod charts;
 mod performance;
 mod portfolio;
 
+use std::collections::HashMap;
+use std::path::Path;
+
 use crate::api::{ApiError, GhostfolioClient};
+
+#[derive(Clone)]
+pub enum ToolDispatcher {
+    Live(GhostfolioClient),
+    Mock(MockFixtureSet),
+}
+
+impl ToolDispatcher {
+    pub async fn dispatch(
+        &self,
+        tool_name: &str,
+        input: &serde_json::Value,
+    ) -> Result<serde_json::Value, ApiError> {
+        match self {
+            Self::Live(client) => dispatch(client, tool_name, input).await,
+            Self::Mock(fixtures) => fixtures.dispatch(tool_name, input),
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct MockFixtureSet {
+    by_tool: HashMap<String, serde_json::Value>,
+}
+
+impl MockFixtureSet {
+    pub fn load_dir(dir: &Path) -> Result<Self, ApiError> {
+        let mut by_tool = HashMap::new();
+
+        let entries = std::fs::read_dir(dir).map_err(|e| {
+            ApiError::Request(format!(
+                "failed to read fixture directory {}: {e}",
+                dir.display()
+            ))
+        })?;
+
+        for entry in entries {
+            let entry = entry.map_err(|e| ApiError::Request(e.to_string()))?;
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+                continue;
+            };
+            if ext != "json" {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+
+            let content = std::fs::read_to_string(&path).map_err(|e| {
+                ApiError::Request(format!(
+                    "failed to read fixture file {}: {e}",
+                    path.display()
+                ))
+            })?;
+            let value: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
+                ApiError::Parse(format!("invalid json fixture {}: {e}", path.display()))
+            })?;
+            by_tool.insert(stem.to_string(), value);
+        }
+
+        Ok(Self { by_tool })
+    }
+
+    pub fn dispatch(
+        &self,
+        tool_name: &str,
+        input: &serde_json::Value,
+    ) -> Result<serde_json::Value, ApiError> {
+        let raw = self.by_tool.get(tool_name).ok_or_else(|| {
+            ApiError::Request(format!(
+                "mock fixture missing for tool '{tool_name}' (expected {tool_name}.json)"
+            ))
+        })?;
+
+        if let Some(key) = extract_lookup_key(tool_name, input)
+            && let Some(obj) = raw.as_object()
+            && !obj.is_empty()
+        {
+            if let Some(value) = obj.get(&key) {
+                return Ok(value.clone());
+            }
+
+            let key_lower = key.to_lowercase();
+            if let Some((_, value)) = obj.iter().find(|(k, _)| k.to_lowercase() == key_lower) {
+                return Ok(value.clone());
+            }
+        }
+
+        Ok(raw.clone())
+    }
+}
 
 pub async fn dispatch(
     client: &GhostfolioClient,
@@ -32,6 +130,25 @@ pub async fn dispatch(
         "chart_sparkline" => charts::sparkline(input).map_err(ApiError::Request),
         "chart_bar" => charts::bar(input).map_err(ApiError::Request),
         _ => Err(ApiError::Request(format!("unknown tool: {tool_name}"))),
+    }
+}
+
+fn extract_lookup_key(tool_name: &str, input: &serde_json::Value) -> Option<String> {
+    match tool_name {
+        "get_holding_detail" | "get_asset_profile" => {
+            let data_source = input.get("dataSource")?.as_str()?;
+            let symbol = input.get("symbol")?.as_str()?;
+            Some(format!("{data_source}:{symbol}"))
+        }
+        "get_account_balances" => input
+            .get("id")
+            .and_then(|v| v.as_str())
+            .map(ToOwned::to_owned),
+        "search_assets" => input
+            .get("query")
+            .and_then(|v| v.as_str())
+            .map(ToOwned::to_owned),
+        _ => None,
     }
 }
 

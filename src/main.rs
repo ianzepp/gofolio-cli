@@ -2,6 +2,7 @@ mod agent;
 mod api;
 mod app;
 mod config;
+mod evals;
 mod langsmith;
 mod markdown;
 mod market;
@@ -26,6 +27,33 @@ struct Cli {
 enum Command {
     /// Start the interactive TUI (default)
     Chat,
+    /// Run eval suites against the in-process CLI agent
+    Test {
+        /// Suite id from gauntlet/evals/suites.yaml
+        #[arg(long, default_value = "quick")]
+        suite: String,
+        /// Comma-separated case ids to run (overrides suite case selection)
+        #[arg(long = "case", value_delimiter = ',')]
+        case_ids: Option<Vec<String>>,
+        /// Model id override (defaults to configured provider model)
+        #[arg(long)]
+        model: Option<String>,
+        /// LLM provider override (anthropic|openrouter|openai)
+        #[arg(long)]
+        provider: Option<String>,
+        /// Evals root path (auto-detected if omitted)
+        #[arg(long)]
+        evals_root: Option<String>,
+        /// Fixture directory for mock mode (defaults to evals/fixtures/moderate-portfolio)
+        #[arg(long)]
+        fixture_dir: Option<String>,
+        /// Use live Ghostfolio API instead of fixture-backed mock data
+        #[arg(long, default_value_t = false)]
+        live: bool,
+        /// List available suites and exit
+        #[arg(long, default_value_t = false)]
+        list_suites: bool,
+    },
     /// Show or edit configuration
     Config {
         /// Set a config key (e.g., ghostfolio_url=http://localhost:3333)
@@ -49,6 +77,31 @@ async fn main() {
     match cli.command.unwrap_or(Command::Chat) {
         Command::Chat => {
             if let Err(e) = app::run().await {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
+        Command::Test {
+            suite,
+            case_ids,
+            model,
+            provider,
+            evals_root,
+            fixture_dir,
+            live,
+            list_suites,
+        } => {
+            let args = evals::TestArgs {
+                suite,
+                case_ids,
+                model,
+                provider,
+                evals_root: evals_root.map(std::path::PathBuf::from),
+                fixture_dir: fixture_dir.map(std::path::PathBuf::from),
+                live,
+                list_suites,
+            };
+            if let Err(e) = evals::run(args).await {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }
