@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 /// Auth sub-object matching the original config.json structure.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -45,18 +46,59 @@ impl Config {
     pub fn load() -> Self {
         let path = Self::path();
         match std::fs::read_to_string(&path) {
-            Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
-            Err(_) => Self::default(),
+            Ok(contents) => match serde_json::from_str(&contents) {
+                Ok(config) => config,
+                Err(e) => {
+                    warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "config: failed to parse config file, using defaults"
+                    );
+                    Self::default()
+                }
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
+            Err(e) => {
+                warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "config: failed to read config file, using defaults"
+                );
+                Self::default()
+            }
         }
     }
 
     pub fn save(&self) {
         let path = Self::path();
         if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "config: failed to create config directory"
+                );
+                return;
+            }
         }
-        let contents = serde_json::to_string_pretty(self).unwrap_or_default() + "\n";
-        let _ = std::fs::write(&path, contents);
+        let contents = match serde_json::to_string_pretty(self) {
+            Ok(contents) => contents + "\n",
+            Err(e) => {
+                warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "config: failed to serialize config"
+                );
+                return;
+            }
+        };
+        if let Err(e) = std::fs::write(&path, contents) {
+            warn!(
+                path = %path.display(),
+                error = %e,
+                "config: failed to write config file"
+            );
+        }
     }
 
     /// Resolve ghostfolio URL: env > config > default.

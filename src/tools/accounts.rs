@@ -1,3 +1,4 @@
+use super::encode_path_segment;
 use crate::api::{ApiError, GhostfolioClient};
 
 pub async fn list_accounts(client: &GhostfolioClient) -> Result<serde_json::Value, ApiError> {
@@ -11,5 +12,6 @@ pub async fn get_account_balances(
     let id = input["id"]
         .as_str()
         .ok_or_else(|| ApiError::Request("missing id".to_string()))?;
+    let id = encode_path_segment(id);
     client.get(&format!("/api/v1/account/{id}/balances")).await
 }

@@ -1,10 +1,11 @@
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Padding, Paragraph};
-use ratatui::Frame;
 
 use crate::app::AppState;
+use crate::text::truncate_utf8;
 use crate::theme;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
@@ -16,12 +17,18 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
     };
 
     let portfolio_height = match &state.portfolio {
-        None => 2,    // header + "(loading...)"
+        None => 2, // header + "(loading...)"
         Some(p) => {
             let mut h: u16 = 1; // header
-            if p.total_value.is_some() { h += 1; }
-            if p.total_investment.is_some() { h += 1; }
-            if p.net_performance.is_some() { h += 1; }
+            if p.total_value.is_some() {
+                h += 1;
+            }
+            if p.total_investment.is_some() {
+                h += 1;
+            }
+            if p.net_performance.is_some() {
+                h += 1;
+            }
             h += 1; // holdings/accounts line
             if !p.top_holdings.is_empty() {
                 h += 1; // blank line before top holdings
@@ -66,8 +73,16 @@ fn render_market_panel(frame: &mut Frame, area: Rect, state: &AppState) {
         )));
     } else {
         for q in &state.market_quotes {
-            let arrow = if q.change_pct >= 0.0 { "\u{25B2}" } else { "\u{25BC}" };
-            let color = if q.change_pct >= 0.0 { theme::GREEN } else { theme::RED };
+            let arrow = if q.change_pct >= 0.0 {
+                "\u{25B2}"
+            } else {
+                "\u{25BC}"
+            };
+            let color = if q.change_pct >= 0.0 {
+                theme::GREEN
+            } else {
+                theme::RED
+            };
 
             let price_str = if q.price >= 1000.0 {
                 format!("{:.0}", q.price)
@@ -83,7 +98,9 @@ fn render_market_panel(frame: &mut Frame, area: Rect, state: &AppState) {
                 Span::styled(name, Style::default().fg(theme::WHITE)),
                 Span::styled(
                     format!("{:>8}", price_str),
-                    Style::default().fg(theme::WHITE).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(theme::WHITE)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(" ", Style::default()),
                 Span::styled(
@@ -109,7 +126,9 @@ fn render_portfolio_panel(frame: &mut Frame, area: Rect, state: &AppState) {
         .padding(Padding::new(1, 1, 1, 0));
 
     let label_style = Style::default().fg(theme::MUTED);
-    let value_style = Style::default().fg(theme::WHITE).add_modifier(Modifier::BOLD);
+    let value_style = Style::default()
+        .fg(theme::WHITE)
+        .add_modifier(Modifier::BOLD);
 
     let mut lines = Vec::new();
 
@@ -121,7 +140,11 @@ fn render_portfolio_panel(frame: &mut Frame, area: Rect, state: &AppState) {
             )));
         }
         Some(p) => {
-            let cur = if p.currency.is_empty() { "USD" } else { &p.currency };
+            let cur = if p.currency.is_empty() {
+                "USD"
+            } else {
+                &p.currency
+            };
 
             if let Some(val) = p.total_value {
                 lines.push(Line::from(vec![
@@ -138,10 +161,15 @@ fn render_portfolio_panel(frame: &mut Frame, area: Rect, state: &AppState) {
             }
 
             if let Some(perf) = p.net_performance {
-                let pct_str = p.net_performance_pct
+                let pct_str = p
+                    .net_performance_pct
                     .map(|pct| format!(" ({:.1}%)", pct * 100.0))
                     .unwrap_or_default();
-                let color = if perf >= 0.0 { theme::GREEN } else { theme::RED };
+                let color = if perf >= 0.0 {
+                    theme::GREEN
+                } else {
+                    theme::RED
+                };
                 let arrow = if perf >= 0.0 { "\u{25B2}" } else { "\u{25BC}" };
                 lines.push(Line::from(vec![
                     Span::styled("P&L    ", label_style),
@@ -152,28 +180,23 @@ fn render_portfolio_panel(frame: &mut Frame, area: Rect, state: &AppState) {
                 ]));
             }
 
-            lines.push(Line::from(vec![
-                Span::styled(
-                    format!("{} holdings, {} accounts", p.num_holdings, p.num_accounts),
-                    label_style,
-                ),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                format!("{} holdings, {} accounts", p.num_holdings, p.num_accounts),
+                label_style,
+            )]));
 
             if !p.top_holdings.is_empty() {
                 lines.push(Line::from(""));
                 for h in &p.top_holdings {
                     // Truncate long names to fit sidebar
-                    let name = if h.name.len() > 18 {
-                        format!("{}...", &h.name[..15])
+                    let name = if h.name.chars().count() > 18 {
+                        format!("{}...", truncate_utf8(&h.name, 15))
                     } else {
                         h.name.clone()
                     };
                     lines.push(Line::from(vec![
                         Span::styled(format!("{:<19}", name), Style::default().fg(theme::WHITE)),
-                        Span::styled(
-                            format!("{:>5.1}%", h.allocation_pct),
-                            label_style,
-                        ),
+                        Span::styled(format!("{:>5.1}%", h.allocation_pct), label_style),
                     ]));
                 }
             }

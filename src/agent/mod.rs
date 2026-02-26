@@ -11,6 +11,7 @@ use self::client::AnthropicClient;
 use self::types::{AgentError, Content, ContentBlock, Message, ToolCallRecord};
 use crate::api::GhostfolioClient;
 use crate::langsmith::{LangSmithConfig, Trace};
+use crate::text::truncate_utf8;
 use crate::tools as tool_dispatch;
 
 const MAX_TOOL_ROUNDS: usize = 20;
@@ -42,7 +43,15 @@ pub fn spawn_agent(
     tx: mpsc::UnboundedSender<AgentEvent>,
 ) {
     tokio::spawn(async move {
-        match run_loop(&api_client, &anthropic_key, &model, history, langsmith.as_ref(), &tx).await
+        match run_loop(
+            &api_client,
+            &anthropic_key,
+            &model,
+            history,
+            langsmith.as_ref(),
+            &tx,
+        )
+        .await
         {
             Ok(()) => {}
             Err(e) => {
@@ -74,7 +83,11 @@ async fn run_loop(
     let mut last_input_tokens: u64 = 0;
 
     for (steps, round) in (0..MAX_TOOL_ROUNDS).enumerate() {
-        info!(round = round + 1, messages = messages.len(), "agent: llm round start");
+        info!(
+            round = round + 1,
+            messages = messages.len(),
+            "agent: llm round start"
+        );
 
         let llm_start = Instant::now();
         let response = client
@@ -149,7 +162,7 @@ async fn run_loop(
                         // Truncate large responses to avoid context bloat
                         let s = data.to_string();
                         if s.len() > 4000 {
-                            (format!("{}... (truncated)", &s[..4000]), false)
+                            (format!("{}... (truncated)", truncate_utf8(&s, 4000)), false)
                         } else {
                             (s, false)
                         }
@@ -190,12 +203,9 @@ async fn run_loop(
                 }
                 if let Content::Blocks(ref mut blocks) = msg.content {
                     for block in blocks.iter_mut() {
-                        if let ContentBlock::ToolResult {
-                            content, ..
-                        } = block
-                        {
+                        if let ContentBlock::ToolResult { content, .. } = block {
                             if content.len() > 100 {
-                                *content = format!("{}...", &content[..100]);
+                                *content = format!("{}...", truncate_utf8(content, 100));
                             }
                         }
                     }

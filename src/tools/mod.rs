@@ -28,12 +28,9 @@ pub async fn dispatch(
         "get_asset_profile" => assets::get_asset_profile(client, input).await,
         "get_market_data" => assets::get_market_data(client).await,
         "get_benchmarks" => benchmarks::get_benchmarks(client).await,
-        "calculate" => calculator::evaluate(input)
-            .map_err(ApiError::Request),
-        "chart_sparkline" => charts::sparkline(input)
-            .map_err(ApiError::Request),
-        "chart_bar" => charts::bar(input)
-            .map_err(ApiError::Request),
+        "calculate" => calculator::evaluate(input).map_err(ApiError::Request),
+        "chart_sparkline" => charts::sparkline(input).map_err(ApiError::Request),
+        "chart_bar" => charts::bar(input).map_err(ApiError::Request),
         _ => Err(ApiError::Request(format!("unknown tool: {tool_name}"))),
     }
 }
@@ -56,4 +53,30 @@ fn query_params(input: &serde_json::Value, keys: &[&str]) -> Vec<(String, String
         }
     }
     params
+}
+
+/// Percent-encode a path segment to keep tool-driven API requests in-bounds.
+fn encode_path_segment(segment: &str) -> String {
+    let mut out = String::with_capacity(segment.len());
+    for &b in segment.as_bytes() {
+        let is_unreserved = b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~');
+        if is_unreserved {
+            out.push(char::from(b));
+        } else {
+            out.push('%');
+            out.push_str(&format!("{b:02X}"));
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encode_path_segment;
+
+    #[test]
+    fn encodes_reserved_and_unicode_bytes() {
+        assert_eq!(encode_path_segment("../AAPL"), "..%2FAAPL");
+        assert_eq!(encode_path_segment("BTC 🚀"), "BTC%20%F0%9F%9A%80");
+    }
 }

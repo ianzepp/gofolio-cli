@@ -3,8 +3,9 @@ mod api;
 mod app;
 mod config;
 mod langsmith;
-mod market;
 mod markdown;
+mod market;
+mod text;
 mod theme;
 mod tools;
 mod ui;
@@ -75,7 +76,9 @@ async fn main() {
                             }
                             _ => {
                                 eprintln!("Unknown config key: {key}");
-                                eprintln!("Valid keys: url, token, anthropic_api_key, model, langchain_api_key, langchain_project");
+                                eprintln!(
+                                    "Valid keys: url, token, anthropic_api_key, model, langchain_api_key, langchain_project"
+                                );
                                 std::process::exit(1);
                             }
                         }
@@ -95,8 +98,7 @@ async fn main() {
                 let auth = cfg.auth.as_ref();
                 println!(
                     "auth.url       = {}",
-                    auth.and_then(|a| a.url.as_deref())
-                        .unwrap_or("(not set)")
+                    auth.and_then(|a| a.url.as_deref()).unwrap_or("(not set)")
                 );
                 println!(
                     "auth.token     = {}",
@@ -126,10 +128,7 @@ async fn main() {
                         "(not set)"
                     }
                 );
-                println!(
-                    "langchain_proj = {}",
-                    cfg.langchain_project()
-                );
+                println!("langchain_proj = {}", cfg.langchain_project());
                 if let Some(ref traits) = cfg.traits
                     && !traits.is_empty()
                 {

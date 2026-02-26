@@ -3,6 +3,7 @@
 //! Reads config from the same env vars as the server:
 //!   LANGCHAIN_TRACING_V2, LANGCHAIN_ENDPOINT, LANGCHAIN_API_KEY, LANGCHAIN_PROJECT
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use chrono::Utc;
@@ -10,6 +11,7 @@ use serde::Serialize;
 use tracing::{info, warn};
 
 use crate::config::Config;
+use crate::text::truncate_utf8;
 
 /// LangSmith configuration, resolved from config file + environment.
 #[derive(Clone)]
@@ -28,7 +30,11 @@ impl LangSmithConfig {
         let project = config.langchain_project();
 
         info!(project = %project, "langsmith: tracing enabled");
-        Some(Self { endpoint, api_key, project })
+        Some(Self {
+            endpoint,
+            api_key,
+            project,
+        })
     }
 }
 
@@ -130,12 +136,7 @@ impl Trace {
     }
 
     /// Post a child "tool" run for a tool invocation.
-    pub fn log_tool_call(
-        &self,
-        tool_name: &str,
-        duration_ms: u64,
-        success: bool,
-    ) {
+    pub fn log_tool_call(&self, tool_name: &str, duration_ms: u64, success: bool) {
         let child_id = uuid();
         let start = Utc::now() - chrono::Duration::milliseconds(duration_ms as i64);
 
@@ -272,7 +273,14 @@ fn patch_run(http: reqwest::Client, config: LangSmithConfig, run_id: &str, body:
 fn uuid() -> String {
     // Simple v4 UUID from random bytes
     let mut bytes = [0u8; 16];
-    getrandom::fill(&mut bytes).unwrap_or(());
+    if let Err(e) = getrandom::fill(&mut bytes) {
+        static FALLBACK_COUNTER: AtomicU64 = AtomicU64::new(1);
+        let counter = FALLBACK_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let now = Utc::now().timestamp_nanos_opt().unwrap_or_default() as u128;
+        let seed = now ^ ((counter as u128) << 64) ^ ((std::process::id() as u128) << 32);
+        bytes = seed.to_be_bytes();
+        warn!(error = %e, "langsmith: RNG unavailable, using deterministic UUID fallback");
+    }
     bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
     bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 1
     format!(
@@ -282,7 +290,9 @@ fn uuid() -> String {
         u16::from_be_bytes([bytes[6], bytes[7]]),
         u16::from_be_bytes([bytes[8], bytes[9]]),
         // last 6 bytes as a single hex number
-        u64::from_be_bytes([0, 0, bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]]),
+        u64::from_be_bytes([
+            0, 0, bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+        ]),
     )
 }
 
@@ -291,5 +301,5 @@ fn now() -> String {
 }
 
 fn truncate(s: &str, max: usize) -> &str {
-    if s.len() > max { &s[..max] } else { s }
+    truncate_utf8(s, max)
 }
