@@ -7,6 +7,21 @@ use crate::agent::client::{
     Adapter, Provider, ProviderConfig, default_model_for_provider, provider_from_id,
 };
 
+#[derive(Debug, Clone)]
+pub enum KeyFormatStatus {
+    Expected,
+    LooksLike(Provider),
+    Unknown,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProviderKeyStatus {
+    pub provider: Provider,
+    pub configured: bool,
+    pub source: Option<String>,
+    pub format: Option<KeyFormatStatus>,
+}
+
 /// Auth sub-object matching the original config.json structure.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct AuthConfig {
@@ -48,6 +63,72 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn provider_env_var(provider: Provider) -> &'static str {
+        match provider {
+            Provider::Anthropic => "ANTHROPIC_API_KEY",
+            Provider::OpenRouter => "OPENROUTER_API_KEY",
+            Provider::OpenAI => "OPENAI_API_KEY",
+        }
+    }
+
+    fn looks_like_provider(key: &str) -> Option<Provider> {
+        if key.starts_with("sk-ant-") {
+            return Some(Provider::Anthropic);
+        }
+        if key.starts_with("sk-or-v1-") || key.starts_with("sk-or-") {
+            return Some(Provider::OpenRouter);
+        }
+        if key.starts_with("sk-proj-") || key.starts_with("sk-") {
+            return Some(Provider::OpenAI);
+        }
+        None
+    }
+
+    fn key_for_provider_with_source(&self, provider: Provider) -> Option<(String, String)> {
+        let env_name = Self::provider_env_var(provider);
+        if let Ok(v) = std::env::var(env_name)
+            && !v.trim().is_empty()
+        {
+            return Some((v, format!("env:{env_name}")));
+        }
+        let cfg_val = match provider {
+            Provider::Anthropic => self.anthropic_api_key.clone(),
+            Provider::OpenRouter => self.openrouter_api_key.clone(),
+            Provider::OpenAI => self.openai_api_key.clone(),
+        };
+        cfg_val
+            .filter(|v| !v.trim().is_empty())
+            .map(|v| (v, "config".to_string()))
+    }
+
+    pub fn provider_key_statuses(&self) -> Vec<ProviderKeyStatus> {
+        let mut out = Vec::new();
+        for provider in [Provider::Anthropic, Provider::OpenRouter, Provider::OpenAI] {
+            let status = if let Some((key, source)) = self.key_for_provider_with_source(provider) {
+                let format = match Self::looks_like_provider(&key) {
+                    Some(detected) if detected == provider => KeyFormatStatus::Expected,
+                    Some(other) => KeyFormatStatus::LooksLike(other),
+                    None => KeyFormatStatus::Unknown,
+                };
+                ProviderKeyStatus {
+                    provider,
+                    configured: true,
+                    source: Some(source),
+                    format: Some(format),
+                }
+            } else {
+                ProviderKeyStatus {
+                    provider,
+                    configured: false,
+                    source: None,
+                    format: None,
+                }
+            };
+            out.push(status);
+        }
+        out
+    }
+
     pub fn dir() -> PathBuf {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
         home.join(".config").join("ghostfolio-cli")

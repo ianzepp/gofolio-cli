@@ -10,7 +10,7 @@ use crate::agent::client::{self, LlmClient, ModelEntry, Provider, ProviderConfig
 use crate::agent::types::{Content, Message, ToolCallRecord};
 use crate::agent::{self, AgentEvent};
 use crate::api::GhostfolioClient;
-use crate::config::Config;
+use crate::config::{Config, KeyFormatStatus, ProviderKeyStatus};
 use crate::langsmith::LangSmithConfig;
 use crate::market::{self, MarketQuote};
 use crate::provider_cache;
@@ -66,6 +66,7 @@ pub struct AppState {
     pub total_tool_calls: usize,
     pub latency_ms: u64,
     pub last_input_tokens: u64,
+    pub llm_keys_header: String,
     pub feedback: Option<i8>, // 1 = thumbs up, -1 = thumbs down
     pub scroll_offset: u16,   // 0 = at bottom, >0 = scrolled up by N rows
     pub modal: Option<ModalState>,
@@ -76,9 +77,10 @@ pub struct AppState {
     // Internal state
     config: Config,
     llm_providers: Vec<ProviderConfig>,
+    provider_key_statuses: Vec<ProviderKeyStatus>,
     llm_clients: Vec<(Provider, LlmClient)>,
     active_provider: Option<Provider>,
-    model_modal_values: Vec<ModelModalValue>,
+    model_modal_values: Vec<Option<ModelModalValue>>,
     api_client: Option<GhostfolioClient>,
     history: Vec<Message>,
     agent_rx: Option<mpsc::UnboundedReceiver<AgentEvent>>,
@@ -89,9 +91,32 @@ pub struct AppState {
 }
 
 impl AppState {
+    fn header_keys_from_statuses(statuses: &[ProviderKeyStatus]) -> String {
+        let mut parts = Vec::new();
+        for s in statuses {
+            let short = match s.provider {
+                Provider::Anthropic => "ANT",
+                Provider::OpenRouter => "OR",
+                Provider::OpenAI => "OAI",
+            };
+            let mark = if !s.configured {
+                "✗"
+            } else {
+                match s.format {
+                    Some(KeyFormatStatus::Expected) => "✓",
+                    Some(KeyFormatStatus::LooksLike(_)) | Some(KeyFormatStatus::Unknown) => "!",
+                    None => "✓",
+                }
+            };
+            parts.push(format!("{short}{mark}"));
+        }
+        format!("KEYS {}", parts.join(" "))
+    }
+
     fn new() -> Self {
         let config = Config::load();
         let langsmith = LangSmithConfig::from_config(&config);
+        let provider_key_statuses = config.provider_key_statuses();
         let llm_providers = config.configured_llm_providers();
         let llm_clients: Vec<(Provider, LlmClient)> = llm_providers
             .iter()
@@ -103,6 +128,7 @@ impl AppState {
         let model = active_provider
             .map(|p| config.model_for_provider(p))
             .unwrap_or_else(|| config.model_for_provider(Provider::Anthropic));
+        let llm_keys_header = Self::header_keys_from_statuses(&provider_key_statuses);
 
         // Check for pre-configured auth
         let has_token = config.access_token().is_some();
@@ -130,6 +156,7 @@ impl AppState {
             total_tool_calls: 0,
             latency_ms: 0,
             last_input_tokens: 0,
+            llm_keys_header,
             feedback: None,
             scroll_offset: 0,
             modal: None,
@@ -138,6 +165,7 @@ impl AppState {
             portfolio: None,
             config,
             llm_providers,
+            provider_key_statuses,
             llm_clients,
             active_provider,
             model_modal_values: Vec::new(),
@@ -359,12 +387,71 @@ impl AppState {
     fn open_model_modal(&mut self) {
         let mut items = Vec::new();
         let mut values = Vec::new();
-        for cfg in &self.llm_providers {
-            if self.client_for_provider(cfg.provider).is_none() {
+        let mut missing_notes = Vec::new();
+        for status in &self.provider_key_statuses {
+            let cfg = self
+                .llm_providers
+                .iter()
+                .find(|c| c.provider == status.provider);
+
+            let adapter = cfg
+                .map(|c| c.adapter.id().to_string())
+                .unwrap_or_else(|| "-".to_string());
+
+            if !status.configured {
+                missing_notes.push(format!(
+                    "Missing {} ({})",
+                    status.provider.label(),
+                    Config::provider_env_var(status.provider)
+                ));
                 continue;
             }
-            items.push(format!("{} [{}]", cfg.provider.label(), cfg.adapter.id()));
-            values.push(ModelModalValue::Provider(cfg.provider));
+
+            match &status.format {
+                Some(KeyFormatStatus::Expected) => {
+                    items.push(format!("{} [{}]", status.provider.label(), adapter));
+                }
+                Some(KeyFormatStatus::LooksLike(other)) => {
+                    items.push(format!(
+                        "{} [{}] (key looks like {})",
+                        status.provider.label(),
+                        adapter,
+                        other.label()
+                    ));
+                }
+                Some(KeyFormatStatus::Unknown) => {
+                    items.push(format!(
+                        "{} [{}] (unrecognized key format)",
+                        status.provider.label(),
+                        adapter
+                    ));
+                }
+                None => {
+                    items.push(format!("{} [{}]", status.provider.label(), adapter));
+                }
+            }
+
+            if self.client_for_provider(status.provider).is_some() {
+                values.push(Some(ModelModalValue::Provider(status.provider)));
+            } else {
+                values.push(None);
+            }
+        }
+
+        if !missing_notes.is_empty() {
+            if !items.is_empty() {
+                items.push("".to_string());
+                values.push(None);
+            }
+            for note in missing_notes {
+                items.push(note);
+                values.push(None);
+            }
+        }
+
+        if items.is_empty() {
+            items.push("No providers configured".to_string());
+            values.push(None);
         }
 
         self.model_modal_values = values;
@@ -384,7 +471,7 @@ impl AppState {
             .iter()
             .map(|item| {
                 let id = item.split(" (").next().unwrap_or(item).to_string();
-                ModelModalValue::Model { provider, id }
+                Some(ModelModalValue::Model { provider, id })
             })
             .collect();
         self.modal = Some(ModalState::new("Select Model".to_string(), items));
@@ -602,7 +689,7 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
                                 if let Some(ref m) = state.modal {
                                     let filtered = m.filtered_items();
                                     if let Some((orig_idx, _item)) = filtered.get(m.selected)
-                                        && let Some(value) =
+                                        && let Some(Some(value)) =
                                             state.model_modal_values.get(*orig_idx).cloned()
                                     {
                                         match value {

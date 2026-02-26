@@ -45,13 +45,18 @@ pub fn render(frame: &mut Frame, area: Rect) {
 }
 
 /// Render the full-width amber header bar.
-pub fn render_header(frame: &mut Frame, area: Rect, title: &str) {
+pub fn render_header(frame: &mut Frame, area: Rect, title: &str, right_info: &str) {
     let width = area.width as usize;
-    let padded = format!(" {title} ");
-    let display = if padded.len() < width {
-        format!("{padded}{}", " ".repeat(width - padded.len()))
+    let left = format!(" {title} ");
+    let right = format!(" {right_info} ");
+    let display = if left.len() + right.len() < width {
+        format!(
+            "{left}{}{}",
+            " ".repeat(width - left.len() - right.len()),
+            right
+        )
     } else {
-        padded[..width].to_string()
+        left.chars().take(width).collect::<String>()
     };
 
     let line = Line::from(Span::styled(

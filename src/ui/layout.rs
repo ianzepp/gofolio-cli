@@ -21,7 +21,12 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         .split(area);
 
     status::render(frame, vertical[0]);
-    status::render_header(frame, vertical[1], "GHOSTFOLIO AGENT");
+    status::render_header(
+        frame,
+        vertical[1],
+        "GHOSTFOLIO AGENT",
+        &state.llm_keys_header,
+    );
 
     // 1-char padding around the content area
     let content_area = vertical[2].inner(Margin::new(1, 1));
