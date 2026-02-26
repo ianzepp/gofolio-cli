@@ -94,11 +94,6 @@ impl AppState {
     fn header_keys_from_statuses(statuses: &[ProviderKeyStatus]) -> String {
         let mut parts = Vec::new();
         for s in statuses {
-            let short = match s.provider {
-                Provider::Anthropic => "ANT",
-                Provider::OpenRouter => "OR",
-                Provider::OpenAI => "OAI",
-            };
             let mark = if !s.configured {
                 "✗"
             } else {
@@ -108,9 +103,9 @@ impl AppState {
                     None => "✓",
                 }
             };
-            parts.push(format!("{short}{mark}"));
+            parts.push(format!("{}{}", s.provider.label(), mark));
         }
-        format!("KEYS {}", parts.join(" "))
+        parts.join("  ")
     }
 
     fn new() -> Self {
