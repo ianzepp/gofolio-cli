@@ -210,3 +210,7 @@ fn parse_response(json: &str) -> Result<ChatResponse, AgentError> {
         output_tokens: api.usage.output_tokens,
     })
 }
+
+#[cfg(test)]
+#[path = "anthropic_test.rs"]
+mod tests;

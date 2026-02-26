@@ -211,12 +211,5 @@ fn encode_path_segment(segment: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::encode_path_segment;
-
-    #[test]
-    fn encodes_reserved_and_unicode_bytes() {
-        assert_eq!(encode_path_segment("../AAPL"), "..%2FAAPL");
-        assert_eq!(encode_path_segment("BTC 🚀"), "BTC%20%F0%9F%9A%80");
-    }
-}
+#[path = "mod_test.rs"]
+mod tests;

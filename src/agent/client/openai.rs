@@ -411,3 +411,7 @@ struct OaiModelsResponse {
 struct OaiModelInfo {
     id: String,
 }
+
+#[cfg(test)]
+#[path = "openai_test.rs"]
+mod tests;

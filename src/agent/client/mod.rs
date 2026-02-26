@@ -165,3 +165,7 @@ pub fn provider_from_id(id: &str) -> Option<Provider> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+#[path = "mod_test.rs"]
+mod tests;
