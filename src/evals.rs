@@ -605,20 +605,24 @@ pub fn report(args: ReportArgs) -> Result<(), String> {
     let (latency_p50_ms, latency_p95_ms) =
         compute_latency_percentiles(results.iter().map(|r| r.duration_ms));
 
-    println!("Run: {run_id}");
-    println!("Path: {}", run_dir.display());
-    println!(
-        "Summary: total={} passed={} failed={} errors={} input_tokens={} output_tokens={} duration={} p50={} p95={}",
-        total,
-        passed,
-        failed,
-        errors,
-        total_input_tokens,
-        total_output_tokens,
-        format_seconds(total_duration_ms),
-        format_seconds(latency_p50_ms),
-        format_seconds(latency_p95_ms)
-    );
+    println!("# Eval Report");
+    println!();
+    println!("## Run");
+    println!("- Run ID: `{run_id}`");
+    println!("- Path: `{}`", run_dir.display());
+    println!();
+    println!("## Summary");
+    println!("| Metric | Value |");
+    println!("| --- | --- |");
+    println!("| total | {} |", total);
+    println!("| passed | {} |", passed);
+    println!("| failed | {} |", failed);
+    println!("| errors | {} |", errors);
+    println!("| input_tokens | {} |", total_input_tokens);
+    println!("| output_tokens | {} |", total_output_tokens);
+    println!("| duration | {} |", format_seconds(total_duration_ms));
+    println!("| p50 | {} |", format_seconds(latency_p50_ms));
+    println!("| p95 | {} |", format_seconds(latency_p95_ms));
 
     let mut by_model: BTreeMap<&str, (usize, usize, usize)> = BTreeMap::new();
     let mut by_category: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
@@ -661,7 +665,10 @@ pub fn report(args: ReportArgs) -> Result<(), String> {
         }
     }
 
-    println!("By model:");
+    println!();
+    println!("## By Model");
+    println!("| Model | Total | Passed | Pass Rate | Errors |");
+    println!("| --- | ---: | ---: | ---: | ---: |");
     for (model, (count, model_passed, model_errors)) in by_model {
         let pass_rate = if count > 0 {
             (model_passed as f64 / count as f64) * 100.0
@@ -669,12 +676,19 @@ pub fn report(args: ReportArgs) -> Result<(), String> {
             0.0
         };
         println!(
-            "- {} total={} passed={} pass_rate={:.1}% errors={}",
-            model, count, model_passed, pass_rate, model_errors
+            "| {} | {} | {} | {:.1}% | {} |",
+            markdown_escape_cell(model),
+            count,
+            model_passed,
+            pass_rate,
+            model_errors
         );
     }
 
-    println!("By category:");
+    println!();
+    println!("## By Category");
+    println!("| Category | Total | Passed | Pass Rate |");
+    println!("| --- | ---: | ---: | ---: |");
     for (category, (count, category_passed)) in &by_category {
         let pass_rate = if *count > 0 {
             (*category_passed as f64 / *count as f64) * 100.0
@@ -682,12 +696,18 @@ pub fn report(args: ReportArgs) -> Result<(), String> {
             0.0
         };
         println!(
-            "- {} total={} passed={} pass_rate={:.1}%",
-            category, count, category_passed, pass_rate
+            "| {} | {} | {} | {:.1}% |",
+            markdown_escape_cell(category),
+            count,
+            category_passed,
+            pass_rate
         );
     }
 
-    println!("By difficulty:");
+    println!();
+    println!("## By Difficulty");
+    println!("| Difficulty | Total | Passed | Pass Rate |");
+    println!("| --- | ---: | ---: | ---: |");
     for (difficulty, (count, difficulty_passed)) in &by_difficulty {
         let pass_rate = if *count > 0 {
             (*difficulty_passed as f64 / *count as f64) * 100.0
@@ -695,19 +715,33 @@ pub fn report(args: ReportArgs) -> Result<(), String> {
             0.0
         };
         println!(
-            "- {} total={} passed={} pass_rate={:.1}%",
-            difficulty, count, difficulty_passed, pass_rate
+            "| {} | {} | {} | {:.1}% |",
+            markdown_escape_cell(difficulty),
+            count,
+            difficulty_passed,
+            pass_rate
         );
     }
 
     let difficulty_columns: Vec<&str> = difficulties.keys().copied().collect();
-    println!("Category x Difficulty:");
+    println!();
+    println!("## Category x Difficulty");
     let header = if difficulty_columns.is_empty() {
-        "category".to_string()
+        "| Category |".to_string()
     } else {
-        format!("category | {}", difficulty_columns.join(" | "))
+        let cols = difficulty_columns
+            .iter()
+            .map(|difficulty| markdown_escape_cell(difficulty))
+            .collect::<Vec<_>>()
+            .join(" | ");
+        format!("| Category | {} |", cols)
     };
     println!("{header}");
+    if difficulty_columns.is_empty() {
+        println!("| --- |");
+    } else {
+        println!("| --- | {} |", vec!["---"; difficulty_columns.len()].join(" | "));
+    }
     for (category, row) in matrix {
         let mut values = Vec::new();
         for difficulty in &difficulty_columns {
@@ -719,9 +753,9 @@ pub fn report(args: ReportArgs) -> Result<(), String> {
             }
         }
         if values.is_empty() {
-            println!("{category}");
+            println!("| {} |", markdown_escape_cell(category));
         } else {
-            println!("{} | {}", category, values.join(" | "));
+            println!("| {} | {} |", markdown_escape_cell(category), values.join(" | "));
         }
     }
 
@@ -931,6 +965,10 @@ fn is_case_result_json(path: &Path) -> bool {
         path.file_name().and_then(|name| name.to_str()),
         Some("summary.json")
     )
+}
+
+fn markdown_escape_cell(value: &str) -> String {
+    value.replace('|', "\\|")
 }
 
 fn load_suites(root: &Path) -> Result<std::collections::HashMap<String, SuiteConfig>, String> {
