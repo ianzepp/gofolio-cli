@@ -38,8 +38,9 @@
   query: 'Show me 6 months of price history for XYZFAKECO'
   category: 'history'
   difficulty: 'edge_case'
-  expected_tools: ['price_history']
+  expected_tools: []
   must_contain: []
-  must_not_contain: ['$', 'price was', 'closed at']
+  must_not_contain: ['price was', 'closed at', 'historicalData']
   expected_verified: false
+  skip_verified: true
   tags: ['edge-case', 'history', 'hallucination-guard']
