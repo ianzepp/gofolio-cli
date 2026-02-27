@@ -56,16 +56,10 @@ enum Command {
         /// Use live Ghostfolio API instead of fixture-backed mock data
         #[arg(long, default_value_t = false)]
         live: bool,
-        /// Run test cases in parallel (in-process async tasks)
-        #[arg(long, default_value_t = false)]
-        parallel: bool,
-        /// Maximum number of cases to run concurrently when --parallel is enabled
-        #[arg(long)]
-        max_parallel: Option<usize>,
         /// List available suites and exit
         #[arg(long, default_value_t = false)]
         list_suites: bool,
-        /// Disable TUI progress display (use plain text output even in parallel mode)
+        /// Disable TUI progress display (use plain text output for CI/piping)
         #[arg(long, default_value_t = false)]
         no_tui: bool,
     },
@@ -99,8 +93,6 @@ async fn main() {
             evals_root,
             fixture_dir,
             live,
-            parallel,
-            max_parallel,
             list_suites,
             no_tui,
         } => {
@@ -113,8 +105,6 @@ async fn main() {
                 evals_root: evals_root.map(std::path::PathBuf::from),
                 fixture_dir: fixture_dir.map(std::path::PathBuf::from),
                 live,
-                parallel,
-                max_parallel,
                 list_suites,
                 no_tui,
             };

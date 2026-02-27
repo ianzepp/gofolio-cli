@@ -28,8 +28,6 @@ pub struct TestArgs {
     pub evals_root: Option<PathBuf>,
     pub fixture_dir: Option<PathBuf>,
     pub live: bool,
-    pub parallel: bool,
-    pub max_parallel: Option<usize>,
     pub list_suites: bool,
     pub no_tui: bool,
 }
@@ -193,22 +191,22 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
         ToolDispatcher::Mock(fixtures)
     };
 
-    let use_tui = args.parallel
-        && !args.no_tui
+    let use_tui = !args.no_tui
         && std::io::IsTerminal::is_terminal(&std::io::stderr());
 
     let mut results = Vec::with_capacity(cases.len() * targets.len());
 
-    if use_tui {
-        // TUI parallel mode with key pooling
-        for target in &targets {
-            let keys = runtime_cfg.api_keys_for_provider(target.provider);
-            if keys.is_empty() {
-                return Err(format!(
-                    "no API keys found for provider '{}'",
-                    target.provider.id()
-                ));
-            }
+    for target in &targets {
+        let keys = runtime_cfg.api_keys_for_provider(target.provider);
+        if keys.is_empty() {
+            return Err(format!(
+                "no API keys found for provider '{}'",
+                target.provider.id()
+            ));
+        }
+
+        if use_tui {
+            // TUI mode with key pooling (parallel across available keys)
             let key_pool = KeyPool::new(keys.clone());
             let pool_target = ModelTargetPool {
                 provider: target.provider,
@@ -224,12 +222,10 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
             let pool_size = key_pool.pool_size();
             let ml = model_label.clone();
 
-            // Spawn TUI rendering in a separate task
             let tui_handle = tokio::spawn(async move {
                 crate::evals_tui::run_tui(tui_rx, &suite_name, total_cases, pool_size, &ml).await
             });
 
-            // Run cases with key pool
             let mut model_results = run_cases_parallel_tui(
                 &cases,
                 &pool_target,
@@ -240,34 +236,22 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
             )
             .await?;
 
-            // Wait for TUI to finish rendering
             if let Err(e) = tui_handle.await {
                 eprintln!("TUI task error: {e}");
             }
 
             results.append(&mut model_results);
-        }
-    } else {
-        // Original serial/parallel-no-TUI path
-        let default_parallel = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4);
-        let max_parallel = args.max_parallel.unwrap_or(default_parallel).max(1);
-        if args.parallel {
-            println!("Parallel case execution enabled (max_parallel={max_parallel})");
-        }
-        for target in &targets {
+        } else {
+            // Plain-text serial mode (CI / piped output)
             println!(
                 "Model run: provider={} model={}",
                 target.provider.label(),
                 target.model
             );
-            let mut model_results = run_cases_for_target(
+            let mut model_results = run_cases_serial(
                 &cases,
                 target,
                 &dispatcher,
-                args.parallel,
-                max_parallel,
                 langsmith.as_ref(),
             )
             .await?;
@@ -646,72 +630,31 @@ fn build_model_targets(
     Ok(targets)
 }
 
-async fn run_cases_for_target(
+/// Plain-text serial execution (for CI / piped output / --no-tui).
+async fn run_cases_serial(
     cases: &[&EvalCase],
     target: &ModelTarget,
     dispatcher: &ToolDispatcher,
-    parallel: bool,
-    max_parallel: usize,
     langsmith: Option<&LangSmithConfig>,
 ) -> Result<Vec<EvalResult>, String> {
     let mut results = Vec::with_capacity(cases.len());
-    if !parallel {
-        for eval_case in cases {
-            let started = Instant::now();
-            let result = run_case(
-                &target.client,
-                &target.model,
-                dispatcher,
-                eval_case,
-                langsmith,
-            )
-            .await;
-            let elapsed_ms = started.elapsed().as_millis() as u64;
-            results.push(build_eval_result(
-                (*eval_case).clone(),
-                target.model.clone(),
-                elapsed_ms,
-                result,
-            ));
-        }
-        return Ok(results);
-    }
-
-    let max_parallel = max_parallel.max(1);
-    let mut join_set = JoinSet::new();
-    let mut index = 0usize;
-    while index < cases.len() || !join_set.is_empty() {
-        while join_set.len() < max_parallel && index < cases.len() {
-            let eval_case = (*cases[index]).clone();
-            index += 1;
-            let llm_client = target.client.clone();
-            let model = target.model.clone();
-            let dispatcher = dispatcher.clone();
-            let langsmith = langsmith.cloned();
-            join_set.spawn(async move {
-                let started = Instant::now();
-                let result = run_case(
-                    &llm_client,
-                    &model,
-                    &dispatcher,
-                    &eval_case,
-                    langsmith.as_ref(),
-                )
-                .await;
-                (
-                    eval_case,
-                    model,
-                    started.elapsed().as_millis() as u64,
-                    result,
-                )
-            });
-        }
-
-        if let Some(joined) = join_set.join_next().await {
-            let (eval_case, model, elapsed_ms, result) =
-                joined.map_err(|e| format!("parallel task join error: {e}"))?;
-            results.push(build_eval_result(eval_case, model, elapsed_ms, result));
-        }
+    for eval_case in cases {
+        let started = Instant::now();
+        let result = run_case(
+            &target.client,
+            &target.model,
+            dispatcher,
+            eval_case,
+            langsmith,
+        )
+        .await;
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+        results.push(build_eval_result(
+            (*eval_case).clone(),
+            target.model.clone(),
+            elapsed_ms,
+            result,
+        ));
     }
     Ok(results)
 }

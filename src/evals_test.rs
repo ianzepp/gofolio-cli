@@ -12,8 +12,6 @@ fn deterministic_args(suite: &str, case_ids: Option<Vec<&str>>) -> TestArgs {
         evals_root: Some(PathBuf::from("evals")),
         fixture_dir: None,
         live: false,
-        parallel: false,
-        max_parallel: Some(1),
         list_suites: false,
         no_tui: true,
     }
