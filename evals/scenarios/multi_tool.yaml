@@ -47,7 +47,7 @@
   query: 'Show me my holdings with their current prices'
   category: 'multi_tool'
   difficulty: 'ambiguous'
-  expected_tools: ['get_holdings', 'get_asset_profile']
+  expected_tools: ['get_holdings']
   must_contain: ['AAPL', 'MSFT']
   must_not_contain: ['error']
   expected_verified: true

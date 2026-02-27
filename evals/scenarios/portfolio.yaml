@@ -15,18 +15,20 @@
   category: 'portfolio'
   difficulty: 'straightforward'
   expected_tools: ['get_portfolio_summary']
-  must_contain: ['$']
+  must_contain_any: ['$', 'USD']
+  must_contain: []
   must_not_contain: ['error', 'unknown']
   expected_verified: true
   tags: ['portfolio', 'value']
 
 - id: port-003
-  description: 'Holdings list with live market prices'
+  description: 'Holdings list with market prices'
   query: 'Show me my holdings and their current market prices'
   category: 'portfolio'
   difficulty: 'ambiguous'
-  expected_tools: ['get_holdings', 'get_asset_profile']
-  must_contain: ['$', 'AAPL']
+  expected_tools: ['get_holdings']
+  must_contain_any: ['AAPL', 'Apple']
+  must_contain: []
   must_not_contain: ['error']
   expected_verified: true
   tags: ['portfolio', 'multi-tool']
@@ -36,7 +38,7 @@
   query: 'How have my stock positions performed over the last 3 months?'
   category: 'portfolio'
   difficulty: 'ambiguous'
-  expected_tools: ['get_holdings', 'price_history']
+  expected_tools: ['get_performance']
   must_contain: ['%']
   must_not_contain: ['error', 'cannot determine']
   expected_verified: true

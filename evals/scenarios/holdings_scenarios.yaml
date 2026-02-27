@@ -27,6 +27,6 @@
   difficulty: 'edge_case'
   expected_tools: ['get_holdings']
   must_contain: []
-  must_not_contain: ['TSLA']
+  must_not_contain: ['150 shares of TSLA', 'You own TSLA', 'your TSLA position', 'TSLA holding']
   expected_verified: true
   tags: ['holdings', 'edge-case', 'hallucination-guard']

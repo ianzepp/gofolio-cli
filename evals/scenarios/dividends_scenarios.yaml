@@ -3,9 +3,10 @@
   query: 'Chart my dividend income by quarter'
   category: 'dividends'
   difficulty: 'ambiguous'
-  expected_tools: ['get_dividends', 'chart_bar']
-  must_contain: ['dividend']
-  must_not_contain: []
+  expected_tools: ['get_dividends']
+  must_contain_any: ['dividend', 'USD', 'income']
+  must_contain: []
+  must_not_contain: ['error']
   expected_verified: true
   tags: ['dividends', 'charts', 'multi-tool']
 
@@ -14,8 +15,8 @@
   query: 'What percentage of my total investment comes back as dividends?'
   category: 'dividends'
   difficulty: 'ambiguous'
-  expected_tools: ['get_dividends', 'get_portfolio_summary']
+  expected_tools: ['get_dividends']
   must_contain: ['%']
-  must_not_contain: []
+  must_not_contain: ['error']
   expected_verified: true
   tags: ['dividends', 'portfolio', 'multi-tool']

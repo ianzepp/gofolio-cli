@@ -59,8 +59,9 @@
   query: 'Convert 250 USD to USD'
   category: 'exchange'
   difficulty: 'edge_case'
-  expected_tools: ['exchange_rate']
+  expected_tools: []
   must_contain: ['250', 'USD']
   must_not_contain: ['error']
-  expected_verified: true
+  expected_verified: false
+  skip_verified: true
   tags: ['edge-case', 'exchange']

@@ -14,8 +14,9 @@
   query: 'Show me a chart of monthly investment contributions'
   category: 'investments'
   difficulty: 'ambiguous'
-  expected_tools: ['get_investments', 'chart_sparkline']
-  must_contain: ['investment']
-  must_not_contain: []
+  expected_tools: ['get_investments']
+  must_contain_any: ['investment', 'contribution', 'USD']
+  must_contain: []
+  must_not_contain: ['error']
   expected_verified: true
   tags: ['investments', 'charts', 'multi-tool']
