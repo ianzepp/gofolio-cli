@@ -16,8 +16,8 @@
   difficulty: 'edge_case'
   expected_tools: []
   must_contain: []
-  must_not_contain: []
-  expected_verified: true
+  must_not_contain: ['$', '%', 'portfolio', 'holdings', 'AAPL']
+  expected_verified: false
   tags: ['general', 'no-tools']
 
 - id: 'gen-003'
