@@ -186,7 +186,9 @@ pub fn all_tools() -> Vec<Tool> {
                 (BUY, SELL, DIVIDEND, INTEREST, FEE, LIABILITY, ITEM), quantity, unitPrice, \
                 fee, feeInBaseCurrency, value, valueInBaseCurrency, currency, comment, isDraft, \
                 SymbolProfile (symbol, name, dataSource, currency, assetClass, assetSubClass), \
-                account (name, currency, platform). Supports pagination, sorting, and filtering."
+                account (name, currency, platform). Tool results are returned to the model in \
+                TOON tabular format (CSV-like rows with headers) for compact ingestion. \
+                Supports pagination, sorting, and filtering."
                 .to_string(),
             input_schema: serde_json::json!({
                 "type": "object",

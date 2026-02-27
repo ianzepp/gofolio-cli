@@ -218,8 +218,10 @@ pub async fn run_with_dispatcher(
                             chart_data.push(data.clone());
                         }
 
+                        // Prefer compact, LLM-friendly representations for heavy payloads.
+                        let s = crate::tools::compact_for_llm(name, &data)
+                            .unwrap_or_else(|| data.to_string());
                         // Truncate large responses to avoid context bloat
-                        let s = data.to_string();
                         if s.len() > 4000 {
                             (format!("{}... (truncated)", truncate_utf8(&s, 4000)), false)
                         } else {

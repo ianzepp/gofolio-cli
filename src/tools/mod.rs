@@ -18,6 +18,14 @@ pub enum ToolDispatcher {
     Mock(MockFixtureSet),
 }
 
+/// Optionally convert a tool payload to a more token-efficient LLM-facing format.
+pub fn compact_for_llm(tool_name: &str, data: &serde_json::Value) -> Option<String> {
+    match tool_name {
+        "list_activities" => activities::to_toon(data),
+        _ => None,
+    }
+}
+
 /// Tools that run locally (no API call) and should bypass mock fixtures.
 const LOCAL_TOOLS: &[&str] = &["calculate", "chart_sparkline", "chart_bar"];
 
