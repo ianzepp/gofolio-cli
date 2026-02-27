@@ -81,6 +81,7 @@ struct TuiState {
     errors: usize,
     total_cases: usize,
     suite_name: String,
+    run_id: String,
     key_count: usize,
     max_concurrent: usize,
     started_at: Instant,
@@ -92,7 +93,7 @@ struct TuiState {
 const SPINNER: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 impl TuiState {
-    fn new(suite_name: String, total_cases: usize, key_count: usize, max_concurrent: usize) -> Self {
+    fn new(suite_name: String, run_id: String, total_cases: usize, key_count: usize, max_concurrent: usize) -> Self {
         Self {
             rows: Vec::new(),
             selected: 0,
@@ -104,6 +105,7 @@ impl TuiState {
             errors: 0,
             total_cases,
             suite_name,
+            run_id,
             key_count,
             max_concurrent,
             started_at: Instant::now(),
@@ -179,6 +181,7 @@ impl TuiState {
 pub async fn run_tui(
     mut rx: mpsc::UnboundedReceiver<TuiEvent>,
     suite_name: &str,
+    run_id: &str,
     total_cases: usize,
     key_count: usize,
     max_concurrent: usize,
@@ -193,7 +196,7 @@ pub async fn run_tui(
     let backend = CrosstermBackend::new(io::stderr());
     let mut terminal = Terminal::new(backend).map_err(|e| format!("terminal init: {e}"))?;
 
-    let mut state = TuiState::new(suite_name.to_string(), total_cases, key_count, max_concurrent);
+    let mut state = TuiState::new(suite_name.to_string(), run_id.to_string(), total_cases, key_count, max_concurrent);
     let model_label = model_label.to_string();
 
     let result = run_tui_loop(&mut terminal, &mut state, &mut rx, &model_label).await;
@@ -294,7 +297,7 @@ fn render(frame: &mut ratatui::Frame, state: &TuiState, model_label: &str) {
     render_footer(frame, chunks[2], state);
 
     if state.show_detail && !state.rows.is_empty() {
-        render_detail_modal(frame, area, &state.rows[state.selected], state.detail_scroll);
+        render_detail_modal(frame, area, &state.rows[state.selected], state.detail_scroll, &state.run_id);
     }
 }
 
@@ -474,7 +477,7 @@ fn render_footer(frame: &mut ratatui::Frame, area: Rect, state: &TuiState) {
     frame.render_widget(widget, area);
 }
 
-fn render_detail_modal(frame: &mut ratatui::Frame, area: Rect, row: &RowState, scroll: u16) {
+fn render_detail_modal(frame: &mut ratatui::Frame, area: Rect, row: &RowState, scroll: u16, run_id: &str) {
     // Center a modal covering ~80% of the screen
     let margin_x = area.width / 10;
     let margin_y = area.height / 10;
@@ -509,6 +512,13 @@ fn render_detail_modal(frame: &mut ratatui::Frame, area: Rect, row: &RowState, s
     frame.render_widget(block, modal_area);
 
     let mut lines: Vec<Line<'static>> = Vec::new();
+
+    // Run ID for referencing this result
+    lines.push(Line::from(vec![
+        Span::styled("Run: ", Style::default().fg(theme::MUTED)),
+        Span::styled(run_id.to_string(), Style::default().fg(theme::WHITE).add_modifier(Modifier::BOLD)),
+    ]));
+    lines.push(Line::from(""));
 
     // Tools used
     if !row.tools.is_empty() {

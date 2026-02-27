@@ -222,6 +222,7 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
             let (tui_tx, tui_rx) = mpsc::unbounded_channel();
 
             let suite_name = args.suite.clone();
+            let tui_run_id = run_id.clone();
             let total_cases = cases.len();
             let key_count = key_pool.key_count();
             let max_concurrent = key_pool.max_concurrent();
@@ -232,7 +233,7 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
             let tui_cancel = cancel.clone();
             let tui_handle = tokio::spawn(async move {
                 let result =
-                    crate::evals_tui::run_tui(tui_rx, &suite_name, total_cases, key_count, max_concurrent, &ml)
+                    crate::evals_tui::run_tui(tui_rx, &suite_name, &tui_run_id, total_cases, key_count, max_concurrent, &ml)
                         .await;
                 // If TUI exited early (user pressed q), cancel the workers
                 if result.is_err() {
