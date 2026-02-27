@@ -895,7 +895,7 @@ fn load_run_results(run_dir: &Path) -> Result<Vec<StoredEvalResult>, String> {
     for entry in read_dir(run_dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+        if !is_case_result_json(&path) {
             continue;
         }
         let body = read_to_string(&path).map_err(|e| e.to_string())?;
@@ -911,7 +911,7 @@ fn load_replay_source_cases(run_dir: &Path) -> Result<Vec<ReplaySourceCase>, Str
     for entry in read_dir(run_dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+        if !is_case_result_json(&path) {
             continue;
         }
         let body = read_to_string(&path).map_err(|e| e.to_string())?;
@@ -921,6 +921,16 @@ fn load_replay_source_cases(run_dir: &Path) -> Result<Vec<ReplaySourceCase>, Str
     }
     cases.sort_by(|a, b| a.case_id.cmp(&b.case_id));
     Ok(cases)
+}
+
+fn is_case_result_json(path: &Path) -> bool {
+    if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+        return false;
+    }
+    !matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some("summary.json")
+    )
 }
 
 fn load_suites(root: &Path) -> Result<std::collections::HashMap<String, SuiteConfig>, String> {
