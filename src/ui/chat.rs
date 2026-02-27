@@ -123,6 +123,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
             );
         }
 
+        normalize_lines(&mut msg_lines);
+
         // Prepend role label to first line, indent continuation lines
         for (i, line) in msg_lines.iter_mut().enumerate() {
             let prefix = if i == 0 {
@@ -283,45 +285,35 @@ fn markdown_disabled() -> bool {
 }
 
 fn wrap_line(line: &str, max_width: usize, color: ratatui::style::Color) -> Vec<Line<'static>> {
-    if max_width == 0 {
+    let line = sanitize_line(line);
+    if max_width == 0 || line.is_empty() {
         return vec![Line::from(Span::styled(
-            line.to_string(),
+            line,
             Style::default().fg(color),
         ))];
     }
 
-    if line.chars().count() <= max_width {
-        return vec![Line::from(Span::styled(
-            line.to_string(),
-            Style::default().fg(color),
-        ))];
-    }
-
-    let mut wrapped = Vec::new();
-    let mut remaining = line.to_string();
-    while remaining.chars().count() > max_width {
-        let head = take_prefix_chars(&remaining, max_width);
-        let mut split_byte = head.rfind(' ').unwrap_or(head.len());
-        if split_byte == 0 {
-            // Avoid empty-line emissions when the line starts with whitespace.
-            split_byte = head.len();
+    // Deterministic Unicode-safe wrapping: split by character count only.
+    // This avoids byte-boundary issues and avoids whitespace-trimming artifacts.
+    let mut out = Vec::new();
+    let mut remaining = line;
+    while !remaining.is_empty() {
+        let chunk = take_prefix_chars(&remaining, max_width);
+        let consumed = chunk.chars().count();
+        // Drop whitespace-only chunks to prevent large blank regions from
+        // deeply-indented/ASCII-art lines.
+        if !chunk.trim().is_empty() {
+            out.push(Line::from(Span::styled(chunk, Style::default().fg(color))));
         }
-        let chunk = remaining[..split_byte].trim();
-        if !chunk.is_empty() {
-            wrapped.push(Line::from(Span::styled(
-                chunk.to_string(),
-                Style::default().fg(color),
-            )));
+        if consumed == 0 {
+            break;
         }
-        remaining = remaining[split_byte..].trim_start().to_string();
+        remaining = drop_prefix_chars(&remaining, consumed);
     }
-    if !remaining.trim().is_empty() {
-        wrapped.push(Line::from(Span::styled(
-            remaining,
-            Style::default().fg(color),
-        )));
+    if out.is_empty() {
+        out.push(Line::from(Span::styled("", Style::default().fg(color))));
     }
-    wrapped
+    out
 }
 
 fn take_prefix_chars(s: &str, max_chars: usize) -> String {
@@ -329,4 +321,57 @@ fn take_prefix_chars(s: &str, max_chars: usize) -> String {
         return String::new();
     }
     s.chars().take(max_chars).collect()
+}
+
+fn drop_prefix_chars(s: &str, count: usize) -> String {
+    if count == 0 || s.is_empty() {
+        return s.to_string();
+    }
+    s.chars().skip(count).collect()
+}
+
+fn sanitize_line(line: &str) -> String {
+    line.chars()
+        .filter(|&c| c == '\t' || !c.is_control())
+        .collect::<String>()
+        .trim_end()
+        .to_string()
+}
+
+fn normalize_lines(lines: &mut Vec<Line<'static>>) {
+    if lines.is_empty() {
+        return;
+    }
+
+    let mut normalized = Vec::with_capacity(lines.len());
+    for line in lines.drain(..) {
+        let blank = line.spans.is_empty()
+            || (line.spans.len() == 1 && line.spans[0].content.trim().is_empty());
+        let prev_blank = normalized.last().is_some_and(|l: &Line<'static>| {
+            l.spans.is_empty() || (l.spans.len() == 1 && l.spans[0].content.trim().is_empty())
+        });
+        if blank && prev_blank {
+            continue;
+        }
+        normalized.push(line);
+    }
+
+    while normalized
+        .first()
+        .is_some_and(|l| l.spans.is_empty() || (l.spans.len() == 1 && l.spans[0].content.trim().is_empty()))
+    {
+        normalized.remove(0);
+    }
+    while normalized
+        .last()
+        .is_some_and(|l| l.spans.is_empty() || (l.spans.len() == 1 && l.spans[0].content.trim().is_empty()))
+    {
+        normalized.pop();
+    }
+
+    if normalized.is_empty() {
+        normalized.push(Line::from(Span::raw("")));
+    }
+
+    *lines = normalized;
 }
