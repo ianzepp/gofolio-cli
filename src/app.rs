@@ -37,6 +37,8 @@ pub struct ChatMessage {
     pub text: String,
     pub is_warning: bool,
     pub chart: Option<ChartData>,
+    pub footer: Option<String>,
+    pub footer_is_warning: bool,
 }
 
 #[derive(Debug)]
@@ -112,7 +114,7 @@ impl AppState {
             parts.push(format!("{}{}", s.provider.label(), mark));
         }
         let langchain_mark = if langsmith.is_some() { "✓" } else { "✗" };
-        parts.push(format!("LANGCHAIN{langchain_mark}"));
+        parts.push(format!("LangChain{langchain_mark}"));
         parts.join("  ")
     }
 
@@ -189,6 +191,8 @@ impl AppState {
             text: text.to_string(),
             is_warning: false,
             chart: None,
+            footer: None,
+            footer_is_warning: false,
         });
     }
 
@@ -198,6 +202,8 @@ impl AppState {
             text: text.to_string(),
             is_warning: true,
             chart: None,
+            footer: None,
+            footer_is_warning: false,
         });
     }
 
@@ -278,6 +284,8 @@ impl AppState {
             text: text.clone(),
             is_warning: false,
             chart: None,
+            footer: None,
+            footer_is_warning: false,
         });
 
         // Add to conversation history
@@ -339,6 +347,8 @@ impl AppState {
                         text: String::new(),
                         is_warning: false,
                         chart: Some(chart),
+                        footer: None,
+                        footer_is_warning: false,
                     });
                 }
             }
@@ -360,19 +370,31 @@ impl AppState {
                 self.last_input_tokens = last_input_tokens;
                 self.total_steps += steps;
                 self.verified = verified;
-                self.confidence_label = confidence_label;
                 self.confidence_score = confidence_score;
                 self.latency_ms = self
                     .request_start
                     .map(|s| s.elapsed().as_millis() as u64)
                     .unwrap_or(0);
+                let confidence_label_text = match &confidence_label {
+                    ConfidenceLabel::High => "high",
+                    ConfidenceLabel::Medium => "medium",
+                    ConfidenceLabel::Low => "low",
+                };
 
                 self.messages.push(ChatMessage {
                     role: "agent".to_string(),
                     text: text.clone(),
                     is_warning: false,
                     chart: None,
+                    footer: Some(format!(
+                        "verify:{}  confidence:{:.0}% ({})",
+                        if verified { "pass" } else { "warn" },
+                        confidence_score * 100.0,
+                        confidence_label_text
+                    )),
+                    footer_is_warning: !verified,
                 });
+                self.confidence_label = confidence_label;
 
                 // Add assistant response to history
                 self.history.push(Message {
@@ -380,11 +402,6 @@ impl AppState {
                     content: Content::Text(text),
                 });
 
-                if !self.verified {
-                    self.push_warning(
-                        "Verification warning: response may contain unsupported claims.",
-                    );
-                }
             }
             AgentEvent::Error(err) => {
                 self.loading = false;

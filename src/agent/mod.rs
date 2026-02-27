@@ -13,6 +13,7 @@ use self::types::{
     ToolCallRecord, VerificationCheck, VerificationReport,
 };
 use crate::api::GhostfolioClient;
+use crate::api::ApiError;
 use crate::config::Config;
 use crate::langsmith::{LangSmithConfig, Trace};
 use crate::text::truncate_utf8;
@@ -211,6 +212,7 @@ pub async fn run_with_dispatcher(
                 let start = Instant::now();
                 let result = dispatcher.dispatch(name, input).await;
                 let duration_ms = start.elapsed().as_millis() as u64;
+                let http_status = result.as_ref().err().and_then(api_error_status);
 
                 let (content, is_error) = match result {
                     Ok(data) => {
@@ -239,6 +241,7 @@ pub async fn run_with_dispatcher(
                     name: name.clone(),
                     duration_ms,
                     success: !is_error,
+                    http_status,
                 };
                 if let Some(tx) = tool_progress {
                     let _ = tx.send((name.clone(), !is_error));
@@ -306,6 +309,13 @@ pub async fn run_with_dispatcher(
     }
 
     Err(AgentError::MaxRounds(MAX_TOOL_ROUNDS))
+}
+
+fn api_error_status(err: &ApiError) -> Option<u16> {
+    match err {
+        ApiError::Response { status, .. } => Some(*status),
+        _ => None,
+    }
 }
 
 fn extract_text(blocks: &[ContentBlock]) -> String {
@@ -408,6 +418,17 @@ fn check_claim_to_tool_grounding(
     let mut issues = Vec::new();
     if response_text.trim().is_empty() {
         issues.push("empty response".to_string());
+    }
+
+    if tool_calls.is_empty()
+        && looks_like_greeting_or_ack(user_input)
+        && !has_money_terms(user_input)
+        && !has_numeric_financial_claim(response_text)
+    {
+        return VerificationCheck {
+            pass: issues.is_empty(),
+            issues,
+        };
     }
 
     let risky_claim = has_numeric_financial_claim(response_text)
@@ -654,4 +675,28 @@ fn looks_ambiguous(user_input: &str) -> bool {
     ]
     .iter()
     .any(|kw| lower.contains(kw))
+}
+
+fn looks_like_greeting_or_ack(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    let trimmed = lower.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    let greeting_tokens = [
+        "hi",
+        "hello",
+        "hey",
+        "yo",
+        "sup",
+        "thanks",
+        "thank you",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "how are you",
+    ];
+
+    greeting_tokens.iter().any(|g| trimmed == *g || trimmed.starts_with(&format!("{g} ")))
 }

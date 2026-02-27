@@ -77,6 +77,7 @@ pub struct ToolCallRecord {
     pub name: String,
     pub duration_ms: u64,
     pub success: bool,
+    pub http_status: Option<u16>,
 }
 
 /// A single agent loop step (one LLM call, optionally with tool calls).

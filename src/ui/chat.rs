@@ -101,6 +101,19 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
             )));
         }
 
+        if let Some(footer) = &msg.footer {
+            let footer_color = if msg.footer_is_warning {
+                theme::WARNING
+            } else {
+                theme::MUTED
+            };
+            msg_lines.extend(
+                footer
+                    .lines()
+                    .flat_map(|line| wrap_line(line, content_width, footer_color)),
+            );
+        }
+
         // Prepend role label to first line, indent continuation lines
         for (i, line) in msg_lines.iter_mut().enumerate() {
             let prefix = if i == 0 {

@@ -252,11 +252,19 @@ fn render_tools_panel(frame: &mut Frame, area: Rect, state: &AppState) {
             tc.name.clone(),
             Style::default().fg(theme::WHITE),
         )));
+        let status_note = if tc.success {
+            String::new()
+        } else if let Some(code) = tc.http_status {
+            format!("HTTP {code} ")
+        } else {
+            "ERR ".to_string()
+        };
         lines.push(Line::from(vec![
             Span::styled(
                 format!("  {}ms ", tc.duration_ms),
                 Style::default().fg(theme::MUTED),
             ),
+            Span::styled(status_note, Style::default().fg(theme::MUTED)),
             Span::styled(check.to_string(), Style::default().fg(color)),
         ]));
     }
