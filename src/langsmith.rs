@@ -136,7 +136,16 @@ impl Trace {
     }
 
     /// Post a child "tool" run for a tool invocation.
-    pub fn log_tool_call(&self, tool_name: &str, duration_ms: u64, success: bool) {
+    pub fn log_tool_call(
+        &self,
+        tool_name: &str,
+        arguments: &serde_json::Value,
+        duration_ms: u64,
+        success: bool,
+        http_status: Option<u16>,
+        error: Option<&str>,
+        result_preview: Option<&str>,
+    ) {
         let child_id = uuid();
         let start = Utc::now() - chrono::Duration::milliseconds(duration_ms as i64);
 
@@ -145,14 +154,22 @@ impl Trace {
             name: tool_name,
             run_type: "tool",
             session_name: &self.config.project,
-            inputs: &serde_json::json!({ "tool": tool_name }),
+            inputs: &serde_json::json!({
+                "tool": tool_name,
+                "arguments": arguments,
+            }),
             start_time: &start.to_rfc3339(),
             parent_run_id: Some(&self.run_id),
             extra: None,
         };
 
         let patch = PatchRun {
-            outputs: &serde_json::json!({ "success": success }),
+            outputs: &serde_json::json!({
+                "success": success,
+                "http_status": http_status,
+                "error": error.map(|e| truncate(e, 1000)),
+                "result_preview": result_preview.map(|r| truncate(r, 2000)),
+            }),
             end_time: &now(),
             extra: None,
         };

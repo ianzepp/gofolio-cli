@@ -211,7 +211,7 @@ pub async fn run_with_dispatcher(
                 let duration_ms = start.elapsed().as_millis() as u64;
                 let http_status = result.as_ref().err().and_then(api_error_status);
 
-                let (content, is_error) = match result {
+                let (content, is_error, error_text) = match result {
                     Ok(data) => {
                         // Emit chart data for rendering in the TUI
                         if data.get("chart_type").is_some() {
@@ -223,17 +223,32 @@ pub async fn run_with_dispatcher(
                             .unwrap_or_else(|| data.to_string());
                         // Truncate large responses to avoid context bloat
                         if s.len() > 4000 {
-                            (format!("{}... (truncated)", truncate_utf8(&s, 4000)), false)
+                            (
+                                format!("{}... (truncated)", truncate_utf8(&s, 4000)),
+                                false,
+                                None,
+                            )
                         } else {
-                            (s, false)
+                            (s, false, None)
                         }
                     }
-                    Err(e) => (format!("error: {e}"), true),
+                    Err(e) => {
+                        let message = e.to_string();
+                        (format!("error: {message}"), true, Some(message))
+                    }
                 };
 
                 // Log tool call to LangSmith
                 if let Some(ref t) = trace {
-                    t.log_tool_call(name, duration_ms, !is_error);
+                    t.log_tool_call(
+                        name,
+                        input,
+                        duration_ms,
+                        !is_error,
+                        http_status,
+                        error_text.as_deref(),
+                        Some(content.as_str()),
+                    );
                 }
 
                 let record = ToolCallRecord {
