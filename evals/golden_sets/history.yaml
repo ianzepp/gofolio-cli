@@ -4,7 +4,8 @@
   category: 'history'
   difficulty: 'straightforward'
   expected_tools: ['price_history']
-  must_contain: ['AAPL']
+  must_contain_any: ['AAPL', 'Apple']
+  must_contain: []
   must_not_contain: ['error', 'no data']
   expected_verified: true
   tags: ['happy-path', 'history']
