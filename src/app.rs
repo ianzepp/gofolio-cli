@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 use tracing::warn;
 
 use crate::agent::client::{self, LlmClient, ModelEntry, Provider, ProviderConfig};
-use crate::agent::types::{Content, Message, ToolCallRecord};
+use crate::agent::types::{ConfidenceLabel, Content, Message, ToolCallRecord};
 use crate::agent::{self, AgentEvent};
 use crate::api::GhostfolioClient;
 use crate::config::{Config, KeyFormatStatus, ProviderKeyStatus};
@@ -66,6 +66,9 @@ pub struct AppState {
     pub total_tool_calls: usize,
     pub latency_ms: u64,
     pub last_input_tokens: u64,
+    pub verified: bool,
+    pub confidence_label: ConfidenceLabel,
+    pub confidence_score: f32,
     pub llm_keys_header: String,
     pub feedback: Option<i8>, // 1 = thumbs up, -1 = thumbs down
     pub scroll_offset: u16,   // 0 = at bottom, >0 = scrolled up by N rows
@@ -154,6 +157,9 @@ impl AppState {
             total_tool_calls: 0,
             latency_ms: 0,
             last_input_tokens: 0,
+            verified: false,
+            confidence_label: ConfidenceLabel::Low,
+            confidence_score: 0.0,
             llm_keys_header,
             feedback: None,
             scroll_offset: 0,
@@ -206,6 +212,9 @@ impl AppState {
         self.total_tool_calls = 0;
         self.latency_ms = 0;
         self.last_input_tokens = 0;
+        self.verified = false;
+        self.confidence_label = ConfidenceLabel::Low;
+        self.confidence_score = 0.0;
         self.feedback = None;
         self.loading = false;
         self.push_system("Session cleared. Type a message to begin.");
@@ -339,6 +348,9 @@ impl AppState {
                 output_tokens,
                 last_input_tokens,
                 steps,
+                verified,
+                confidence_label,
+                confidence_score,
             } => {
                 self.loading = false;
                 self.scroll_offset = 0;
@@ -347,6 +359,9 @@ impl AppState {
                 self.total_output_tokens += output_tokens;
                 self.last_input_tokens = last_input_tokens;
                 self.total_steps += steps;
+                self.verified = verified;
+                self.confidence_label = confidence_label;
+                self.confidence_score = confidence_score;
                 self.latency_ms = self
                     .request_start
                     .map(|s| s.elapsed().as_millis() as u64)
@@ -364,6 +379,12 @@ impl AppState {
                     role: "assistant".to_string(),
                     content: Content::Text(text),
                 });
+
+                if !self.verified {
+                    self.push_warning(
+                        "Verification warning: response may contain unsupported claims.",
+                    );
+                }
             }
             AgentEvent::Error(err) => {
                 self.loading = false;

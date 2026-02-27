@@ -89,6 +89,32 @@ pub struct AgentStepRecord {
     pub tool_calls: Vec<ToolCallRecord>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub enum ConfidenceLabel {
+    #[serde(rename = "high")]
+    High,
+    #[serde(rename = "medium")]
+    Medium,
+    #[serde(rename = "low")]
+    Low,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VerificationCheck {
+    pub pass: bool,
+    pub issues: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VerificationReport {
+    pub verified: bool,
+    pub confidence_label: ConfidenceLabel,
+    pub confidence_score: f32,
+    pub claim_to_tool_grounding: VerificationCheck,
+    pub tool_error_propagation: VerificationCheck,
+    pub secondary_review: Option<VerificationCheck>,
+}
+
 /// Full result of one agent run over a user query.
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentRunResult {
@@ -100,4 +126,5 @@ pub struct AgentRunResult {
     pub tool_calls: Vec<ToolCallRecord>,
     pub chart_data: Vec<serde_json::Value>,
     pub verified: bool,
+    pub verification: VerificationReport,
 }

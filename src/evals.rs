@@ -11,7 +11,7 @@ use tokio::task::JoinSet;
 
 use crate::agent;
 use crate::agent::client::{self, Adapter, LlmClient, Provider, ProviderConfig, provider_from_id};
-use crate::agent::types::Message;
+use crate::agent::types::{Message, VerificationReport};
 use crate::config::Config;
 use crate::evals_tui::TuiEvent;
 use crate::key_pool::KeyPool;
@@ -87,6 +87,7 @@ struct EvalResult {
     tools_called: Vec<String>,
     response: String,
     verified: bool,
+    verification: Option<VerificationReport>,
     duration_ms: u64,
     input_tokens: u64,
     output_tokens: u64,
@@ -102,6 +103,7 @@ struct AgentCaseRun {
     tools_called: Vec<String>,
     steps: Vec<StepRun>,
     verified: bool,
+    verification: VerificationReport,
     duration_ms: u64,
     input_tokens: u64,
     output_tokens: u64,
@@ -195,8 +197,7 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
         ToolDispatcher::Mock(fixtures)
     };
 
-    let use_tui = !args.no_tui
-        && std::io::IsTerminal::is_terminal(&std::io::stderr());
+    let use_tui = !args.no_tui && std::io::IsTerminal::is_terminal(&std::io::stderr());
 
     let mut results = Vec::with_capacity(cases.len() * targets.len());
 
@@ -232,9 +233,16 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
 
             let tui_cancel = cancel.clone();
             let tui_handle = tokio::spawn(async move {
-                let result =
-                    crate::evals_tui::run_tui(tui_rx, &suite_name, &tui_run_id, total_cases, key_count, max_concurrent, &ml)
-                        .await;
+                let result = crate::evals_tui::run_tui(
+                    tui_rx,
+                    &suite_name,
+                    &tui_run_id,
+                    total_cases,
+                    key_count,
+                    max_concurrent,
+                    &ml,
+                )
+                .await;
                 // If TUI exited early (user pressed q), cancel the workers
                 if result.is_err() {
                     tui_cancel.cancel();
@@ -294,11 +302,21 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
                 let tools = r.tools_called.join(", ");
                 println!("[{status}] {} — {}", r.case_id, r.description);
                 if !r.pass {
-                    if !r.detail_a.is_empty() { println!("  tools:    {}", r.detail_a); }
-                    if !r.detail_b.is_empty() { println!("  content:  {}", r.detail_b); }
-                    if !r.detail_c.is_empty() { println!("  verified: {}", r.detail_c); }
-                    if !tools.is_empty()       { println!("  called:   {tools}"); }
-                    if let Some(ref err) = r.error { println!("  error:    {err}"); }
+                    if !r.detail_a.is_empty() {
+                        println!("  tools:    {}", r.detail_a);
+                    }
+                    if !r.detail_b.is_empty() {
+                        println!("  content:  {}", r.detail_b);
+                    }
+                    if !r.detail_c.is_empty() {
+                        println!("  verified: {}", r.detail_c);
+                    }
+                    if !tools.is_empty() {
+                        println!("  called:   {tools}");
+                    }
+                    if let Some(ref err) = r.error {
+                        println!("  error:    {err}");
+                    }
                     println!("  response: {}", r.response);
                 }
             }
@@ -392,6 +410,7 @@ fn build_eval_result(
                 tools_called: run.tools_called,
                 response: run.response,
                 verified: run.verified,
+                verification: Some(run.verification.clone()),
                 duration_ms: run.duration_ms,
                 input_tokens: run.input_tokens,
                 output_tokens: run.output_tokens,
@@ -420,6 +439,7 @@ fn build_eval_result(
                 tools_called: Vec::new(),
                 response: String::new(),
                 verified: false,
+                verification: None,
                 duration_ms: elapsed_ms,
                 input_tokens: 0,
                 output_tokens: 0,
@@ -450,8 +470,12 @@ fn print_case_trace(run: &AgentCaseRun) {
         }
     }
     println!(
-        "  total: {}ms | {}+{} tok | verified={}",
-        run.duration_ms, run.input_tokens, run.output_tokens, run.verified
+        "  total: {}ms | {}+{} tok | verified={} confidence={:.0}%",
+        run.duration_ms,
+        run.input_tokens,
+        run.output_tokens,
+        run.verified,
+        run.verification.confidence_score * 100.0
     );
 }
 
@@ -530,10 +554,7 @@ fn resolve_evals_root(explicit: Option<PathBuf>) -> Result<PathBuf, String> {
     if let Some(path) = explicit {
         return Ok(path);
     }
-    let candidates = [
-        PathBuf::from("evals"),
-        PathBuf::from("cli/evals"),
-    ];
+    let candidates = [PathBuf::from("evals"), PathBuf::from("cli/evals")];
     for candidate in candidates {
         if candidate.is_dir() {
             return Ok(candidate);
@@ -892,10 +913,16 @@ async fn run_case_with_progress(
         content: crate::agent::types::Content::Text(eval_case.query.clone()),
     }];
     let started = Instant::now();
-    let result =
-        agent::run_with_dispatcher(llm_client, model, messages, dispatcher, langsmith, Some(tool_tx))
-            .await
-            .map_err(|e| e.to_string())?;
+    let result = agent::run_with_dispatcher(
+        llm_client,
+        model,
+        messages,
+        dispatcher,
+        langsmith,
+        Some(tool_tx),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     let steps = result
         .steps
@@ -921,6 +948,7 @@ async fn run_case_with_progress(
         tools_called: result.tool_calls.into_iter().map(|tc| tc.name).collect(),
         steps,
         verified: result.verified,
+        verification: result.verification,
         duration_ms: started.elapsed().as_millis() as u64,
         input_tokens: result.input_tokens,
         output_tokens: result.output_tokens,
@@ -955,6 +983,7 @@ fn build_eval_result_quiet(
                 tools_called: run.tools_called,
                 response: run.response,
                 verified: run.verified,
+                verification: Some(run.verification.clone()),
                 duration_ms: run.duration_ms,
                 input_tokens: run.input_tokens,
                 output_tokens: run.output_tokens,
@@ -981,6 +1010,7 @@ fn build_eval_result_quiet(
             tools_called: Vec::new(),
             response: String::new(),
             verified: false,
+            verification: None,
             duration_ms: elapsed_ms,
             input_tokens: 0,
             output_tokens: 0,
@@ -1032,6 +1062,7 @@ async fn run_case(
         tools_called: result.tool_calls.into_iter().map(|tc| tc.name).collect(),
         steps,
         verified: result.verified,
+        verification: result.verification,
         duration_ms: started.elapsed().as_millis() as u64,
         input_tokens: result.input_tokens,
         output_tokens: result.output_tokens,
@@ -1071,20 +1102,13 @@ fn grade_tier_a(eval_case: &EvalCase, run: &AgentCaseRun) -> (bool, String) {
         &eval_case.tool_must_contain
     };
 
-    let required: HashSet<String> = must_contain
-        .iter()
-        .map(|t| t.to_string())
-        .collect();
+    let required: HashSet<String> = must_contain.iter().map(|t| t.to_string()).collect();
     let forbidden: HashSet<String> = eval_case
         .tool_must_not_contain
         .iter()
         .map(|t| t.to_string())
         .collect();
-    let actual: HashSet<String> = run
-        .tools_called
-        .iter()
-        .map(|t| t.to_string())
-        .collect();
+    let actual: HashSet<String> = run.tools_called.iter().map(|t| t.to_string()).collect();
 
     if required.is_empty() && forbidden.is_empty() && actual.is_empty() {
         return (true, "No tools expected, none called".to_string());
@@ -1199,7 +1223,11 @@ fn write_result_file(run_dir: &Path, result: &EvalResult) {
     }
 }
 
-fn write_results_jsonl(evals_root: &Path, run_id: &str, results: &[EvalResult]) -> Result<(), String> {
+fn write_results_jsonl(
+    evals_root: &Path,
+    run_id: &str,
+    results: &[EvalResult],
+) -> Result<(), String> {
     // Individual case files are already written incrementally by write_result_file.
     // This function ensures the dir exists and reports the final count.
     let run_dir = evals_root.join("results").join(run_id);

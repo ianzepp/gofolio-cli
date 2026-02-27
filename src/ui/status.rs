@@ -3,6 +3,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
+use crate::agent::types::ConfidenceLabel;
 use crate::app::AppState;
 use crate::theme;
 
@@ -125,6 +126,21 @@ pub fn render_session_bar(frame: &mut Frame, area: Rect, state: &AppState) {
         Span::styled(format!("{}ms", state.latency_ms), style),
         sep.clone(),
         Span::styled(
+            format!(
+                "V:{} {:.0}%",
+                confidence_short(&state.confidence_label),
+                state.confidence_score * 100.0
+            ),
+            Style::default()
+                .fg(if state.verified {
+                    theme::GREEN
+                } else {
+                    theme::WARNING
+                })
+                .bg(theme::BORDER),
+        ),
+        sep.clone(),
+        Span::styled(
             format!("{} {:.0}%", ctx_bar, pct),
             Style::default().fg(ctx_color).bg(theme::BORDER),
         ),
@@ -182,5 +198,13 @@ fn format_count(n: u64) -> String {
         format!("{:.1}k", n as f64 / 1_000.0)
     } else {
         n.to_string()
+    }
+}
+
+fn confidence_short(label: &ConfidenceLabel) -> &'static str {
+    match label {
+        ConfidenceLabel::High => "HIGH",
+        ConfidenceLabel::Medium => "MED",
+        ConfidenceLabel::Low => "LOW",
     }
 }
