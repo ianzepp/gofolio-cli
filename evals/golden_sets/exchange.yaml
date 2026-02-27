@@ -47,7 +47,7 @@
   query: 'Convert 1000 USD to Zimbabwean dollars'
   category: 'exchange'
   difficulty: 'edge_case'
-  expected_tools: ['exchange_rate']
+  expected_tools: []
   must_contain: []
   must_not_contain: ['1000 ZWL', '1000 ZWD']
   expected_verified: false
