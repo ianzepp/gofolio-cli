@@ -1,126 +1,235 @@
 # Ghostfolio CLI (Rust)
 
-`cli/` is the Rust application for Ghostfolio's terminal UI and agent runtime.
+`cli/` is the standalone Rust terminal application for Ghostfolio chat + evals.
 
-## What It Includes
+## What This CLI Includes
 
-- Interactive terminal UI (`ghostfolio` / `ghostfolio chat`)
-- Agent orchestration + tool calls
+- Interactive Bloomberg-style chat UI (`ghostfolio` / `ghostfolio chat`)
+- Tool-calling agent runtime (live API + fixture-backed eval mode)
 - Config management (`ghostfolio config`)
-- Eval runner (`ghostfolio evals`)
-- Unit tests and coverage for Rust code
+- Eval runner with two display modes:
+- TUI progress dashboard (default when stderr is a terminal)
+- Plain console output (`--no-tui`)
 
 ## Prerequisites
 
 - Rust toolchain (`cargo`, `rustc`)
 - Ghostfolio API reachable (default `http://localhost:3333`)
-- API token and model provider keys configured
+- Ghostfolio access token
+- At least one LLM key:
+- `ANTHROPIC_API_KEY`
+- `OPENROUTER_API_KEY`
+- `OPENAI_API_KEY`
 
 ## Quick Start
 
+From repo root:
+
 ```bash
-cd cli
+cargo run --manifest-path cli/Cargo.toml
+```
+
+Or from `cli/`:
+
+```bash
 cargo run
 ```
 
-The default command opens chat mode.
+Default command is `chat`.
 
-## CLI Commands
+## Commands
 
 ### `chat` (default)
 
-Start the interactive UI:
-
 ```bash
-cargo run -- chat
-# or simply
-cargo run
+cargo run --manifest-path cli/Cargo.toml -- chat
 ```
+
+Starts the interactive terminal app:
+
+- Login screen for Ghostfolio URL/token
+- Chat pane with tool call timeline
+- Session status bar with tokens, latency, and verification confidence
+- Model picker (`Ctrl+P`)
+- Inline charts (sparkline / bar) when chart tools are used
+
+Chat keyboard shortcuts:
+
+- `Ctrl+Q` or `Ctrl+C`: quit
+- `Ctrl+N`: new session
+- `Ctrl+Y`: thumbs up
+- `Ctrl+R`: report/thumbs down
+- `Ctrl+P`: model picker
+- `Ctrl+L`: logout
+- `PgUp` / `PgDn`: scroll
+- `Shift+Up` / `Shift+Down`: line scroll
+- `Home` / `End`: jump scroll
+
+Slash commands:
+
+- `/new` or `/clear`
+- `/up`
+- `/report`
+- `/model`
+- `/logout`
+- `/quit` `/exit` `/q`
+- `/help`
 
 ### `config`
 
 Show current config:
 
 ```bash
-cargo run -- config
+cargo run --manifest-path cli/Cargo.toml -- config
 ```
 
 Set config values:
 
 ```bash
-cargo run -- config ghostfolio_url=http://localhost:3333
-cargo run -- config access_token=YOUR_TOKEN
-cargo run -- config anthropic_api_key=YOUR_KEY
-cargo run -- config openrouter_api_key=YOUR_KEY
-cargo run -- config openai_api_key=YOUR_KEY
-cargo run -- config model=openai/gpt-4o-mini
-cargo run -- config llm_provider=openrouter
+cargo run --manifest-path cli/Cargo.toml -- config ghostfolio_url=http://localhost:3333
+cargo run --manifest-path cli/Cargo.toml -- config access_token=YOUR_TOKEN
+cargo run --manifest-path cli/Cargo.toml -- config anthropic_api_key=YOUR_KEY
+cargo run --manifest-path cli/Cargo.toml -- config openrouter_api_key=YOUR_KEY
+cargo run --manifest-path cli/Cargo.toml -- config openai_api_key=YOUR_KEY
+cargo run --manifest-path cli/Cargo.toml -- config llm_provider=openrouter
+cargo run --manifest-path cli/Cargo.toml -- config model=openai/gpt-4o-mini
+cargo run --manifest-path cli/Cargo.toml -- config langchain_api_key=YOUR_KEY
+cargo run --manifest-path cli/Cargo.toml -- config langchain_project=ghostfolio
 ```
 
 ### `evals`
 
-Run eval suites against the in-process CLI agent:
+Run suite:
 
 ```bash
-cargo run -- evals --suite quick
+cargo run --manifest-path cli/Cargo.toml -- evals --suite quick
 ```
 
 List suites:
 
 ```bash
-cargo run -- evals --list-suites
+cargo run --manifest-path cli/Cargo.toml -- evals --list-suites
 ```
 
-Multi-model run:
+Case override:
 
 ```bash
-cargo run -- evals --suite quick --models openai/gpt-4o-mini,claude-sonnet-4-6 --parallel --max-parallel 4
+cargo run --manifest-path cli/Cargo.toml -- evals --suite quick --case acct-001,mkt-001
 ```
 
-Live API mode (instead of fixtures):
+Model matrix:
 
 ```bash
-cargo run -- evals --suite quick --live --model openai/gpt-4o-mini
+cargo run --manifest-path cli/Cargo.toml -- evals --suite quick --models openai/gpt-4o-mini,anthropic/claude-sonnet-4.6
 ```
 
-Eval corpus details: [evals/README.md](./evals/README.md)
-
-## Config and Provider Caches
-
-Config file path:
-
-- `~/.config/ghostfolio-cli/config.json`
-
-Provider model caches:
-
-- `~/.config/ghostfolio-cli/providers/*.json`
-
-These cached provider lists are used for model selection workflows.
-
-## Rust Testing
-
-### Unit tests
-
-All unit tests live in `*_test.rs` files.
+Provider override:
 
 ```bash
-cd cli
-cargo test
+cargo run --manifest-path cli/Cargo.toml -- evals --suite quick --provider openrouter --model openai/gpt-4o-mini
 ```
 
-Run a subset:
+Live API mode:
 
 ```bash
-cargo test tools::calculator
+cargo run --manifest-path cli/Cargo.toml -- evals --suite quick --live
 ```
 
-### Coverage
+Console mode (disable eval TUI):
 
 ```bash
-cargo llvm-cov --summary-only
+cargo run --manifest-path cli/Cargo.toml -- evals --suite quick --no-tui
 ```
 
-## Distinction: `cargo test` vs `ghostfolio evals`
+Eval corpus definitions and suite files live under [`cli/evals/`](./evals/).
 
-- `cargo test`: Rust unit tests for implementation code
-- `ghostfolio evals`: scenario/golden-set behavioral evaluation harness
+## Evals Output Modes
+
+### Evals TUI (default)
+
+When running in a terminal, evals open a dashboard with:
+
+- Per-case rows (`PASS`/`FAIL`/`ERR`)
+- Live tool trail per case
+- Footer totals (completed, passed, failed, errors, elapsed)
+- Detail modal per case (tool calls, tier failures, response/error, run ID)
+
+Keys:
+
+- `↑` / `↓`: move selection
+- `Enter`: open case detail
+- `q`: abort (while running) or exit (when done)
+- Detail modal: `Esc` / `Enter` / `q` to close, `↑` / `↓` to scroll
+
+### Console Output (`--no-tui`)
+
+Plain text output includes:
+
+- Per-case status line
+- Tier failure details (`tier_a`, `tier_b`, `tier_c`) on failures
+- Per-step trace with tool timings
+- Run summary totals and per-model summary
+- Cross-model diffs when running multiple models
+
+## Result Artifacts
+
+Eval runs write artifacts to:
+
+- Per-case JSON: `cli/evals/results/<run-id>/<case-id>.json`
+- SQLite summary DB: `cli/evals/results/results.db`
+
+## Verification in CLI Agent
+
+The agent now records structured verification on every response:
+
+- `claim_to_tool_grounding`
+- `tool_error_propagation`
+- confidence score (`high|medium|low` + numeric score)
+
+Secondary verifier (optional):
+
+- Disabled by default
+- Enable with env vars:
+- `GF_VERIFY_PROVIDER` (`anthropic|openrouter|openai`)
+- `GF_VERIFY_MODEL` (model ID)
+- When enabled, it runs only for risky/low-confidence responses
+
+## Config and Cache Paths
+
+- Config file: `~/.config/ghostfolio-cli/config.toml`
+- Legacy `config.json` is auto-migrated to TOML on load
+- Provider model caches: `~/.config/ghostfolio-cli/providers/*.json`
+
+API key pool env vars for eval parallelism:
+
+- Comma-separated: `ANTHROPIC_API_KEYS`, `OPENROUTER_API_KEYS`, `OPENAI_API_KEYS`
+- Numbered: `ANTHROPIC_API_KEY_1..20` (same pattern for OpenRouter/OpenAI)
+
+## LangSmith / LangChain Tracing
+
+Tracing is enabled when `LANGCHAIN_API_KEY` (or configured equivalent) is present.
+
+Common env vars:
+
+- `LANGCHAIN_API_KEY`
+- `LANGCHAIN_PROJECT`
+- `LANGCHAIN_ENDPOINT` (optional)
+
+## Development and Tests
+
+Run Rust tests:
+
+```bash
+cargo test --manifest-path cli/Cargo.toml
+```
+
+Compile tests only:
+
+```bash
+cargo test --manifest-path cli/Cargo.toml --no-run
+```
+
+`cargo test` vs `ghostfolio evals`:
+
+- `cargo test`: Rust unit/integration tests for implementation
+- `ghostfolio evals`: scenario-based behavioral grading of agent outputs
