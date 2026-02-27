@@ -57,6 +57,7 @@ pub struct AppState {
     pub loading: bool,
     pub tool_calls: Vec<ToolCallRecord>,
     pub model: String,
+    #[allow(dead_code)]
     pub traits: Vec<String>,
     pub turn_count: u32,
     pub total_input_tokens: u64,

@@ -35,6 +35,7 @@ pub enum TuiEvent {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum RowStatus {
     Running,
     Passed,

@@ -18,6 +18,7 @@ pub enum KeyFormatStatus {
 pub struct ProviderKeyStatus {
     pub provider: Provider,
     pub configured: bool,
+    #[allow(dead_code)]
     pub source: Option<String>,
     pub format: Option<KeyFormatStatus>,
 }
@@ -191,14 +192,6 @@ impl Config {
             Provider::Anthropic => &self.anthropic,
             Provider::OpenRouter => &self.openrouter,
             Provider::OpenAI => &self.openai,
-        }
-    }
-
-    fn provider_keys_mut(&mut self, provider: Provider) -> &mut ProviderKeys {
-        match provider {
-            Provider::Anthropic => &mut self.anthropic,
-            Provider::OpenRouter => &mut self.openrouter,
-            Provider::OpenAI => &mut self.openai,
         }
     }
 

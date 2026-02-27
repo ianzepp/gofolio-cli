@@ -45,6 +45,7 @@ pub enum Adapter {
 }
 
 impl Adapter {
+    #[allow(dead_code)]
     pub fn id(self) -> &'static str {
         match self {
             Self::AnthropicMessages => "anthropic_messages",

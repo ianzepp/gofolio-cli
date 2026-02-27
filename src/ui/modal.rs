@@ -37,6 +37,7 @@ impl ModalState {
             .collect()
     }
 
+    #[allow(dead_code)]
     pub fn new(title: String, items: Vec<String>) -> Self {
         let items = items
             .into_iter()

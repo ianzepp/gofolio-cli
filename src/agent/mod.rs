@@ -96,6 +96,7 @@ pub async fn run_with_dispatcher(
 
     let mut total_input_tokens: u64 = 0;
     let mut total_output_tokens: u64 = 0;
+    #[allow(unused_assignments)]
     let mut last_input_tokens: u64 = 0;
     let mut all_tool_calls: Vec<ToolCallRecord> = Vec::new();
     let mut steps_out: Vec<AgentStepRecord> = Vec::new();
