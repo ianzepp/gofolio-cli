@@ -1,7 +1,7 @@
 # Deliverables Checklist
 
 **Deadline:** Sunday Feb 28, 10:59 PM CT
-**Last updated:** Fri Feb 27, 2026 (evidence-based audit, CLI verification update)
+**Last updated:** Fri Feb 27, 2026 (evidence-based audit, CLI verification + replay/report updates)
 
 ---
 
@@ -31,10 +31,10 @@
 - [x] 50+ test cases (73 total across `golden_sets` + `scenarios`)
 - [x] Dataset mix meets minima (20+ happy path, 10+ edge, 10+ adversarial, 10+ multi-step)
 - [x] Multi-model sweep support (`cli/evals/models.yaml` has 34 models)
-- [ ] Coverage matrix reporting (category/difficulty fields exist, but no explicit matrix report output)
+- [x] Coverage matrix reporting (`ghostfolio evals report` prints category/difficulty breakdown and category × difficulty matrix)
 - [ ] Cost estimation + p50/p95 latency reporting in eval output (not implemented)
 - [~] Rubric scorer (Tier D, LLM-as-judge): rubric config exists, scorer not implemented
-- [ ] `--replay` flag for re-grading historical results
+- [x] Replay command for re-grading historical results (`ghostfolio evals replay --run-id <id>` or `--path <run-dir>`)
 
 ## Observability
 
