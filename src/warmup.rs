@@ -20,6 +20,7 @@ pub struct PortfolioSummary {
     pub currency: String,
     pub num_holdings: usize,
     pub num_accounts: usize,
+    pub top_accounts: Vec<AccountRow>,
     pub top_holdings: Vec<HoldingRow>,
 }
 
@@ -27,6 +28,12 @@ pub struct PortfolioSummary {
 pub struct HoldingRow {
     pub name: String,
     pub allocation_pct: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct AccountRow {
+    pub name: String,
+    pub value: f64,
 }
 
 /// Spawn background tasks to fetch accounts, holdings, and performance,
@@ -56,9 +63,7 @@ async fn fetch_context(client: &GhostfolioClient) -> WarmupData {
     match accounts {
         Ok(data) => {
             info!("warmup: accounts loaded");
-            if let Some(arr) = data.as_array() {
-                summary.num_accounts = arr.len();
-            }
+            extract_accounts(&data, &mut summary);
             sections.push(format!(
                 "## Accounts\n```json\n{}\n```",
                 truncate_json(&data)
@@ -130,14 +135,46 @@ fn extract_holdings(data: &serde_json::Value, summary: &mut PortfolioSummary) {
     summary.top_holdings = rows;
 }
 
+fn extract_accounts(data: &serde_json::Value, summary: &mut PortfolioSummary) {
+    // Account endpoint typically returns:
+    // { totalValueInBaseCurrency, accounts: [...] }
+    // but we also support a root-level array for compatibility.
+    let arr = data
+        .get("accounts")
+        .and_then(|v| v.as_array())
+        .or_else(|| data.as_array());
+
+    let Some(accounts) = arr else { return };
+
+    summary.num_accounts = accounts.len();
+
+    if summary.total_value.is_none() {
+        summary.total_value = data
+            .get("totalValueInBaseCurrency")
+            .and_then(|v| v.as_f64())
+            .or_else(|| data.get("totalValue").and_then(|v| v.as_f64()));
+    }
+
+    let mut rows: Vec<AccountRow> = accounts.iter().filter_map(parse_account_row).collect();
+    rows.sort_by(|a, b| {
+        b.value
+            .partial_cmp(&a.value)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    rows.truncate(5);
+    summary.top_accounts = rows;
+}
+
 fn extract_performance(data: &serde_json::Value, summary: &mut PortfolioSummary) {
     // v2 performance returns { performance: { ... } }
     let perf = data.get("performance").unwrap_or(data);
 
-    summary.total_value = perf
-        .get("currentValueInBaseCurrency")
-        .and_then(|v| v.as_f64())
-        .or_else(|| perf.get("currentValue").and_then(|v| v.as_f64()));
+    summary.total_value = summary.total_value.or_else(|| {
+        perf.get("currentValueInBaseCurrency")
+            .and_then(|v| v.as_f64())
+            .or_else(|| perf.get("currentValue").and_then(|v| v.as_f64()))
+            .or_else(|| perf.get("currentNetWorth").and_then(|v| v.as_f64()))
+    });
     summary.total_investment = perf.get("totalInvestment").and_then(|v| v.as_f64());
     summary.net_performance = perf
         .get("netPerformanceWithCurrencyEffect")
@@ -149,11 +186,27 @@ fn extract_performance(data: &serde_json::Value, summary: &mut PortfolioSummary)
         .or_else(|| {
             perf.get("netPerformancePercentage")
                 .and_then(|v| v.as_f64())
-        });
+        })
+        .or_else(|| perf.get("netPerformancePercent").and_then(|v| v.as_f64()));
 
     if let Some(currency) = perf.get("currency").and_then(|v| v.as_str()) {
         summary.currency = currency.to_string();
     }
+}
+
+fn parse_account_row(a: &serde_json::Value) -> Option<AccountRow> {
+    let name = a.get("name").and_then(|v| v.as_str())?;
+    // Prefer account value (cash + holdings), then base-currency balance, then raw balance.
+    let value = a
+        .get("valueInBaseCurrency")
+        .and_then(|v| v.as_f64())
+        .or_else(|| a.get("balanceInBaseCurrency").and_then(|v| v.as_f64()))
+        .or_else(|| a.get("balance").and_then(|v| v.as_f64()))
+        .unwrap_or(0.0);
+    Some(AccountRow {
+        name: name.to_string(),
+        value,
+    })
 }
 
 fn parse_holding_row(h: &serde_json::Value) -> Option<HoldingRow> {

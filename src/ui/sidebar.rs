@@ -30,6 +30,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
                 h += 1;
             }
             h += 1; // holdings/accounts line
+            if !p.top_accounts.is_empty() {
+                h += 1; // blank line before top accounts
+                h += p.top_accounts.len() as u16;
+            }
             if !p.top_holdings.is_empty() {
                 h += 1; // blank line before top holdings
                 h += p.top_holdings.len() as u16;
@@ -184,6 +188,21 @@ fn render_portfolio_panel(frame: &mut Frame, area: Rect, state: &AppState) {
                 format!("{} holdings, {} accounts", p.num_holdings, p.num_accounts),
                 label_style,
             )]));
+
+            if !p.top_accounts.is_empty() {
+                lines.push(Line::from(""));
+                for a in &p.top_accounts {
+                    let name = if a.name.chars().count() > 14 {
+                        format!("{}...", truncate_utf8(&a.name, 11))
+                    } else {
+                        a.name.clone()
+                    };
+                    lines.push(Line::from(vec![
+                        Span::styled(format!("{:<15}", name), Style::default().fg(theme::WHITE)),
+                        Span::styled(format_money(a.value, cur), label_style),
+                    ]));
+                }
+            }
 
             if !p.top_holdings.is_empty() {
                 lines.push(Line::from(""));
