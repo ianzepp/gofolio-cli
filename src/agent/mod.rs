@@ -52,6 +52,7 @@ pub fn spawn_agent(
             history,
             &dispatcher,
             langsmith.as_ref(),
+            None,
         )
         .await
         {
@@ -83,6 +84,7 @@ pub async fn run_with_dispatcher(
     mut messages: Vec<Message>,
     dispatcher: &ToolDispatcher,
     langsmith: Option<&LangSmithConfig>,
+    tool_progress: Option<&mpsc::UnboundedSender<(String, bool)>>,
 ) -> Result<AgentRunResult, AgentError> {
     let tools = tools::all_tools();
 
@@ -207,6 +209,10 @@ pub async fn run_with_dispatcher(
                     duration_ms,
                     success: !is_error,
                 };
+                if let Some(tx) = tool_progress {
+                    let _ = tx.send((name.clone(), !is_error));
+                }
+
                 step_tool_calls.push(record.clone());
                 all_tool_calls.push(record);
 

@@ -3,6 +3,8 @@ mod api;
 mod app;
 mod config;
 mod evals;
+mod evals_tui;
+mod key_pool;
 mod langsmith;
 mod markdown;
 mod market;
@@ -63,6 +65,9 @@ enum Command {
         /// List available suites and exit
         #[arg(long, default_value_t = false)]
         list_suites: bool,
+        /// Disable TUI progress display (use plain text output even in parallel mode)
+        #[arg(long, default_value_t = false)]
+        no_tui: bool,
     },
     /// Show or edit configuration
     Config {
@@ -97,6 +102,7 @@ async fn main() {
             parallel,
             max_parallel,
             list_suites,
+            no_tui,
         } => {
             let args = evals::TestArgs {
                 suite,
@@ -110,6 +116,7 @@ async fn main() {
                 parallel,
                 max_parallel,
                 list_suites,
+                no_tui,
             };
             if let Err(e) = evals::run(args).await {
                 eprintln!("Error: {e}");
@@ -129,13 +136,13 @@ async fn main() {
                                 cfg.set_auth(None, Some(value.to_string()));
                             }
                             "anthropic_api_key" => {
-                                cfg.anthropic_api_key = Some(value.to_string());
+                                cfg.anthropic.api_key = Some(value.to_string());
                             }
                             "openrouter_api_key" => {
-                                cfg.openrouter_api_key = Some(value.to_string());
+                                cfg.openrouter.api_key = Some(value.to_string());
                             }
                             "openai_api_key" => {
-                                cfg.openai_api_key = Some(value.to_string());
+                                cfg.openai.api_key = Some(value.to_string());
                             }
                             "llm_provider" => {
                                 cfg.llm_provider = Some(value.to_string());
@@ -145,10 +152,10 @@ async fn main() {
                             }
                             "model" => cfg.model = Some(value.to_string()),
                             "langchain_api_key" => {
-                                cfg.langchain_api_key = Some(value.to_string());
+                                cfg.langchain.api_key = Some(value.to_string());
                             }
                             "langchain_project" => {
-                                cfg.langchain_project = Some(value.to_string());
+                                cfg.langchain.project = Some(value.to_string());
                             }
                             _ => {
                                 eprintln!("Unknown config key: {key}");
@@ -184,28 +191,37 @@ async fn main() {
                         "(not set)"
                     }
                 );
+                let anthropic_count = cfg.anthropic.api_keys.len();
+                let openrouter_count = cfg.openrouter.api_keys.len();
+                let openai_count = cfg.openai.api_keys.len();
                 println!(
                     "anthropic_key  = {}",
-                    if cfg.anthropic_api_key.is_some() {
-                        "***"
+                    if anthropic_count > 0 {
+                        format!("*** ({anthropic_count} keys)")
+                    } else if cfg.anthropic.api_key.is_some() {
+                        "***".to_string()
                     } else {
-                        "(not set)"
+                        "(not set)".to_string()
                     }
                 );
                 println!(
                     "openrouter_key = {}",
-                    if cfg.openrouter_api_key.is_some() {
-                        "***"
+                    if openrouter_count > 0 {
+                        format!("*** ({openrouter_count} keys)")
+                    } else if cfg.openrouter.api_key.is_some() {
+                        "***".to_string()
                     } else {
-                        "(not set)"
+                        "(not set)".to_string()
                     }
                 );
                 println!(
                     "openai_key     = {}",
-                    if cfg.openai_api_key.is_some() {
-                        "***"
+                    if openai_count > 0 {
+                        format!("*** ({openai_count} keys)")
+                    } else if cfg.openai.api_key.is_some() {
+                        "***".to_string()
                     } else {
-                        "(not set)"
+                        "(not set)".to_string()
                     }
                 );
                 println!(

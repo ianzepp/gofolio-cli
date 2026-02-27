@@ -6,12 +6,15 @@ use std::time::Instant;
 use chrono::Utc;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
 use crate::agent;
-use crate::agent::client::{self, LlmClient, Provider, provider_from_id};
+use crate::agent::client::{self, Adapter, LlmClient, Provider, ProviderConfig, provider_from_id};
 use crate::agent::types::Message;
 use crate::config::Config;
+use crate::evals_tui::TuiEvent;
+use crate::key_pool::KeyPool;
 use crate::langsmith::LangSmithConfig;
 use crate::tools::{MockFixtureSet, ToolDispatcher};
 
@@ -28,6 +31,7 @@ pub struct TestArgs {
     pub parallel: bool,
     pub max_parallel: Option<usize>,
     pub list_suites: bool,
+    pub no_tui: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,6 +56,10 @@ struct EvalCase {
     category: String,
     difficulty: String,
     expected_tools: Vec<String>,
+    #[serde(default)]
+    tool_must_contain: Vec<String>,
+    #[serde(default)]
+    tool_must_not_contain: Vec<String>,
     must_contain: Vec<String>,
     must_not_contain: Vec<String>,
     expected_verified: bool,
@@ -185,30 +193,86 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
         ToolDispatcher::Mock(fixtures)
     };
 
+    let use_tui = args.parallel
+        && !args.no_tui
+        && std::io::IsTerminal::is_terminal(&std::io::stderr());
+
     let mut results = Vec::with_capacity(cases.len() * targets.len());
-    let default_parallel = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4);
-    let max_parallel = args.max_parallel.unwrap_or(default_parallel).max(1);
-    if args.parallel {
-        println!("Parallel case execution enabled (max_parallel={max_parallel})");
-    }
-    for target in &targets {
-        println!(
-            "Model run: provider={} model={}",
-            target.provider.label(),
-            target.model
-        );
-        let mut model_results = run_cases_for_target(
-            &cases,
-            target,
-            &dispatcher,
-            args.parallel,
-            max_parallel,
-            langsmith.as_ref(),
-        )
-        .await?;
-        results.append(&mut model_results);
+
+    if use_tui {
+        // TUI parallel mode with key pooling
+        for target in &targets {
+            let keys = runtime_cfg.api_keys_for_provider(target.provider);
+            if keys.is_empty() {
+                return Err(format!(
+                    "no API keys found for provider '{}'",
+                    target.provider.id()
+                ));
+            }
+            let key_pool = KeyPool::new(keys.clone());
+            let pool_target = ModelTargetPool {
+                provider: target.provider,
+                adapter: provider_adapter(target.provider, &runtime_cfg),
+                model: target.model.clone(),
+            };
+            let model_label = format!("{}:{}", target.provider.id(), target.model);
+
+            let (tui_tx, tui_rx) = mpsc::unbounded_channel();
+
+            let suite_name = args.suite.clone();
+            let total_cases = cases.len();
+            let pool_size = key_pool.pool_size();
+            let ml = model_label.clone();
+
+            // Spawn TUI rendering in a separate task
+            let tui_handle = tokio::spawn(async move {
+                crate::evals_tui::run_tui(tui_rx, &suite_name, total_cases, pool_size, &ml).await
+            });
+
+            // Run cases with key pool
+            let mut model_results = run_cases_parallel_tui(
+                &cases,
+                &pool_target,
+                &dispatcher,
+                &key_pool,
+                langsmith.as_ref(),
+                tui_tx,
+            )
+            .await?;
+
+            // Wait for TUI to finish rendering
+            if let Err(e) = tui_handle.await {
+                eprintln!("TUI task error: {e}");
+            }
+
+            results.append(&mut model_results);
+        }
+    } else {
+        // Original serial/parallel-no-TUI path
+        let default_parallel = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        let max_parallel = args.max_parallel.unwrap_or(default_parallel).max(1);
+        if args.parallel {
+            println!("Parallel case execution enabled (max_parallel={max_parallel})");
+        }
+        for target in &targets {
+            println!(
+                "Model run: provider={} model={}",
+                target.provider.label(),
+                target.model
+            );
+            let mut model_results = run_cases_for_target(
+                &cases,
+                target,
+                &dispatcher,
+                args.parallel,
+                max_parallel,
+                langsmith.as_ref(),
+            )
+            .await?;
+            results.append(&mut model_results);
+        }
     }
 
     results.sort_by(|a, b| {
@@ -242,6 +306,13 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
         run_duration_ms,
         &results,
     )?;
+
+    if failed > 0 || errors > 0 {
+        return Err(format!(
+            "eval suite failed: total={total} passed={passed} failed={failed} errors={errors}"
+        ));
+    }
+
     Ok(())
 }
 
@@ -260,6 +331,18 @@ fn build_eval_result(
                 eval_case.id,
                 eval_case.description
             );
+            if !grade.pass {
+                if !grade.tier_a {
+                    println!("  fail tier_a: {}", grade.detail_a);
+                }
+                if !grade.tier_b {
+                    println!("  fail tier_b: {}", grade.detail_b);
+                }
+                if !grade.tier_c {
+                    println!("  fail tier_c: {}", grade.detail_c);
+                }
+            }
+            print_case_trace(&run);
             EvalResult {
                 case_id: eval_case.id,
                 model,
@@ -315,6 +398,30 @@ fn build_eval_result(
             }
         }
     }
+}
+
+fn print_case_trace(run: &AgentCaseRun) {
+    if run.steps.is_empty() {
+        println!("  steps: none");
+    } else {
+        for step in &run.steps {
+            println!(
+                "  step {}: {}ms | {}+{} tok",
+                step.step_number, step.duration_ms, step.tokens_in, step.tokens_out
+            );
+            if step.tool_calls.is_empty() {
+                println!("    tools: none");
+            } else {
+                for tool_call in &step.tool_calls {
+                    println!("    tool {}: {}ms", tool_call.tool, tool_call.duration_ms);
+                }
+            }
+        }
+    }
+    println!(
+        "  total: {}ms | {}+{} tok | verified={}",
+        run.duration_ms, run.input_tokens, run.output_tokens, run.verified
+    );
 }
 
 fn print_model_summary(results: &[EvalResult]) {
@@ -609,6 +716,245 @@ async fn run_cases_for_target(
     Ok(results)
 }
 
+/// Like [`ModelTarget`] but without a pre-built client — client is created
+/// per-lease from the key pool.
+#[derive(Clone)]
+struct ModelTargetPool {
+    provider: Provider,
+    adapter: Adapter,
+    model: String,
+}
+
+async fn run_cases_parallel_tui(
+    cases: &[&EvalCase],
+    target: &ModelTargetPool,
+    dispatcher: &ToolDispatcher,
+    key_pool: &KeyPool,
+    langsmith: Option<&LangSmithConfig>,
+    tui_tx: mpsc::UnboundedSender<TuiEvent>,
+) -> Result<Vec<EvalResult>, String> {
+    let mut results = Vec::with_capacity(cases.len());
+    let mut join_set = JoinSet::new();
+    let mut index = 0usize;
+
+    while index < cases.len() || !join_set.is_empty() {
+        // Fill up to pool_size concurrent tasks
+        while join_set.len() < key_pool.pool_size() && index < cases.len() {
+            let eval_case = (*cases[index]).clone();
+            index += 1;
+            let model = target.model.clone();
+            let provider = target.provider;
+            let adapter = target.adapter;
+            let dispatcher = dispatcher.clone();
+            let langsmith = langsmith.cloned();
+            let tx = tui_tx.clone();
+
+            // Lease a key — blocks if all keys are in use
+            let lease = key_pool.lease().await;
+
+            join_set.spawn(async move {
+                let _ = tx.send(TuiEvent::CaseStarted {
+                    case_id: eval_case.id.clone(),
+                    description: eval_case.description.clone(),
+                });
+
+                // Create a client using the leased key
+                let client_result = client::create_client(&ProviderConfig {
+                    provider,
+                    adapter,
+                    api_key: lease.key.clone(),
+                });
+                let client = match client_result {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let err = e.to_string();
+                        let _ = tx.send(TuiEvent::CaseFinished {
+                            case_id: eval_case.id.clone(),
+                            pass: false,
+                            error: Some(err.clone()),
+                        });
+                        return (eval_case, model, 0u64, Err(err));
+                    }
+                };
+
+                // Set up tool progress channel
+                let (tool_tx, mut tool_rx) = mpsc::unbounded_channel::<(String, bool)>();
+                let case_id_for_progress = eval_case.id.clone();
+                let tx_for_progress = tx.clone();
+
+                // Spawn a task to forward tool progress events to the TUI
+                let progress_forwarder = tokio::spawn(async move {
+                    while let Some((tool_name, ok)) = tool_rx.recv().await {
+                        let _ = tx_for_progress.send(TuiEvent::ToolDone {
+                            case_id: case_id_for_progress.clone(),
+                            tool_name,
+                            ok,
+                        });
+                    }
+                });
+
+                let started = Instant::now();
+                let result = run_case_with_progress(
+                    &client,
+                    &model,
+                    &dispatcher,
+                    &eval_case,
+                    langsmith.as_ref(),
+                    &tool_tx,
+                )
+                .await;
+                let elapsed_ms = started.elapsed().as_millis() as u64;
+
+                // Close the tool progress channel and wait for forwarder to drain
+                drop(tool_tx);
+                let _ = progress_forwarder.await;
+
+                // Send case finished event
+                let (pass, error) = match &result {
+                    Ok(run) => {
+                        let grade = grade_case(&eval_case, run);
+                        (grade.pass, None)
+                    }
+                    Err(e) => (false, Some(e.clone())),
+                };
+                let _ = tx.send(TuiEvent::CaseFinished {
+                    case_id: eval_case.id.clone(),
+                    pass,
+                    error,
+                });
+
+                // Drop the lease to return the key to the pool
+                drop(lease);
+
+                (eval_case, model, elapsed_ms, result)
+            });
+        }
+
+        // Collect one completed result
+        if let Some(joined) = join_set.join_next().await {
+            let (eval_case, model, elapsed_ms, result) =
+                joined.map_err(|e| format!("parallel task join error: {e}"))?;
+            results.push(build_eval_result_quiet(eval_case, model, elapsed_ms, result));
+        }
+    }
+
+    let _ = tui_tx.send(TuiEvent::AllDone);
+    Ok(results)
+}
+
+/// Like [`run_case`] but passes the tool progress sender through to the agent.
+async fn run_case_with_progress(
+    llm_client: &LlmClient,
+    model: &str,
+    dispatcher: &ToolDispatcher,
+    eval_case: &EvalCase,
+    langsmith: Option<&LangSmithConfig>,
+    tool_tx: &mpsc::UnboundedSender<(String, bool)>,
+) -> Result<AgentCaseRun, String> {
+    let messages = vec![Message {
+        role: "user".to_string(),
+        content: crate::agent::types::Content::Text(eval_case.query.clone()),
+    }];
+    let started = Instant::now();
+    let result =
+        agent::run_with_dispatcher(llm_client, model, messages, dispatcher, langsmith, Some(tool_tx))
+            .await
+            .map_err(|e| e.to_string())?;
+
+    let steps = result
+        .steps
+        .into_iter()
+        .map(|s| StepRun {
+            step_number: s.step_number,
+            duration_ms: s.duration_ms,
+            tokens_in: s.input_tokens,
+            tokens_out: s.output_tokens,
+            tool_calls: s
+                .tool_calls
+                .into_iter()
+                .map(|tc| ToolCallRun {
+                    tool: tc.name,
+                    duration_ms: tc.duration_ms,
+                })
+                .collect(),
+        })
+        .collect();
+
+    Ok(AgentCaseRun {
+        response: result.text,
+        tools_called: result.tool_calls.into_iter().map(|tc| tc.name).collect(),
+        steps,
+        verified: result.verified,
+        duration_ms: started.elapsed().as_millis() as u64,
+        input_tokens: result.input_tokens,
+        output_tokens: result.output_tokens,
+    })
+}
+
+/// Like [`build_eval_result`] but without printing (used in TUI mode).
+fn build_eval_result_quiet(
+    eval_case: EvalCase,
+    model: String,
+    elapsed_ms: u64,
+    result: Result<AgentCaseRun, String>,
+) -> EvalResult {
+    match result {
+        Ok(run) => {
+            let grade = grade_case(&eval_case, &run);
+            EvalResult {
+                case_id: eval_case.id,
+                model,
+                description: eval_case.description,
+                query: eval_case.query,
+                category: eval_case.category,
+                difficulty: eval_case.difficulty,
+                tags: eval_case.tags,
+                pass: grade.pass,
+                tier_a: grade.tier_a,
+                tier_b: grade.tier_b,
+                tier_c: grade.tier_c,
+                detail_a: grade.detail_a,
+                detail_b: grade.detail_b,
+                detail_c: grade.detail_c,
+                tools_called: run.tools_called,
+                response: run.response,
+                verified: run.verified,
+                duration_ms: run.duration_ms,
+                input_tokens: run.input_tokens,
+                output_tokens: run.output_tokens,
+                timestamp: Utc::now().to_rfc3339(),
+                error: None,
+                steps: run.steps,
+            }
+        }
+        Err(e) => EvalResult {
+            case_id: eval_case.id,
+            model,
+            description: eval_case.description,
+            query: eval_case.query,
+            category: eval_case.category,
+            difficulty: eval_case.difficulty,
+            tags: eval_case.tags,
+            pass: false,
+            tier_a: false,
+            tier_b: false,
+            tier_c: false,
+            detail_a: "N/A".to_string(),
+            detail_b: "N/A".to_string(),
+            detail_c: "N/A".to_string(),
+            tools_called: Vec::new(),
+            response: String::new(),
+            verified: false,
+            duration_ms: elapsed_ms,
+            input_tokens: 0,
+            output_tokens: 0,
+            timestamp: Utc::now().to_rfc3339(),
+            error: Some(e),
+            steps: Vec::new(),
+        },
+    }
+}
+
 async fn run_case(
     llm_client: &LlmClient,
     model: &str,
@@ -621,9 +967,10 @@ async fn run_case(
         content: crate::agent::types::Content::Text(eval_case.query.clone()),
     }];
     let started = Instant::now();
-    let result = agent::run_with_dispatcher(llm_client, model, messages, dispatcher, langsmith)
-        .await
-        .map_err(|e| e.to_string())?;
+    let result =
+        agent::run_with_dispatcher(llm_client, model, messages, dispatcher, langsmith, None)
+            .await
+            .map_err(|e| e.to_string())?;
 
     let steps = result
         .steps
@@ -682,34 +1029,63 @@ fn grade_case(eval_case: &EvalCase, run: &AgentCaseRun) -> Grade {
 }
 
 fn grade_tier_a(eval_case: &EvalCase, run: &AgentCaseRun) -> (bool, String) {
-    let expected: HashSet<String> = eval_case
-        .expected_tools
+    let must_contain = if eval_case.tool_must_contain.is_empty() {
+        &eval_case.expected_tools
+    } else {
+        &eval_case.tool_must_contain
+    };
+
+    let required: HashSet<String> = must_contain
         .iter()
-        .map(|t| normalize_tool_name(t))
+        .map(|t| t.to_string())
+        .collect();
+    let forbidden: HashSet<String> = eval_case
+        .tool_must_not_contain
+        .iter()
+        .map(|t| t.to_string())
         .collect();
     let actual: HashSet<String> = run
         .tools_called
         .iter()
-        .map(|t| normalize_tool_name(t))
+        .map(|t| t.to_string())
         .collect();
 
-    if expected.is_empty() && actual.is_empty() {
+    if required.is_empty() && forbidden.is_empty() && actual.is_empty() {
         return (true, "No tools expected, none called".to_string());
     }
 
-    let missing: Vec<String> = expected
+    let missing: Vec<String> = required
         .iter()
         .filter(|tool| !actual.contains(*tool))
         .cloned()
         .collect();
-    if missing.is_empty() {
+
+    let forbidden_called: Vec<String> = actual
+        .iter()
+        .filter(|tool| forbidden.contains(*tool))
+        .cloned()
+        .collect();
+
+    if missing.is_empty() && forbidden_called.is_empty() {
         return (true, "All expected tools were called".to_string());
     }
+
+    let mut details = Vec::new();
+    if !missing.is_empty() {
+        details.push(format!("Missing tools [{}]", missing.join(", ")));
+    }
+    if !forbidden_called.is_empty() {
+        details.push(format!(
+            "Forbidden tools called [{}]",
+            forbidden_called.join(", ")
+        ));
+    }
+
     (
         false,
         format!(
-            "Missing tools [{}]; called [{}]",
-            missing.join(", "),
+            "{}; called [{}]",
+            details.join("; "),
             actual.into_iter().collect::<Vec<_>>().join(", ")
         ),
     )
@@ -756,21 +1132,6 @@ fn grade_tier_c(eval_case: &EvalCase, run: &AgentCaseRun) -> (bool, String) {
             eval_case.expected_verified, run.verified
         ),
     )
-}
-
-fn normalize_tool_name(name: &str) -> String {
-    match name {
-        "market_data" => "get_market_data".to_string(),
-        "exchange_rate" => "calculate".to_string(),
-        "account_overview" => "list_accounts".to_string(),
-        "symbol_lookup" => "search_assets".to_string(),
-        "asset_profile" => "get_asset_profile".to_string(),
-        "benchmark_data" => "get_benchmarks".to_string(),
-        "historical_data" => "get_performance".to_string(),
-        "portfolio_summary" => "get_portfolio_summary".to_string(),
-        "activity_history" => "list_activities".to_string(),
-        _ => name.to_string(),
-    }
 }
 
 fn write_results_jsonl(evals_root: &Path, results: &[EvalResult]) -> Result<(), String> {
@@ -939,3 +1300,27 @@ CREATE TABLE IF NOT EXISTS steps (
     println!("Wrote {}", db_path.display());
     Ok(())
 }
+
+/// Resolve the adapter for a given provider (mirrors Config logic).
+fn provider_adapter(provider: Provider, cfg: &Config) -> Adapter {
+    match provider {
+        Provider::Anthropic => Adapter::AnthropicMessages,
+        Provider::OpenRouter | Provider::OpenAI => {
+            // Respect the configured adapter, default to ChatCompletions
+            let value = std::env::var(match provider {
+                Provider::OpenRouter => "OPENROUTER_ADAPTER",
+                _ => "OPENAI_ADAPTER",
+            })
+            .ok()
+            .or_else(|| cfg.llm_adapter.clone());
+            value
+                .as_deref()
+                .and_then(Adapter::parse)
+                .unwrap_or(Adapter::OpenAIChatCompletions)
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "evals_test.rs"]
+mod tests;
