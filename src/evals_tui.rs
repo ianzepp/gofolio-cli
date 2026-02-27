@@ -385,10 +385,13 @@ fn render_row(row: &RowState, spinner_char: char, width: usize, selected: bool) 
     };
 
     let case_id = format!("{:<10}", row.case_id);
-    let desc = if row.description.len() > 28 {
-        format!("{:<28}", format!("{}...", &row.description[..25]))
-    } else {
-        format!("{:<28}", row.description)
+    let desc = {
+        let chars: Vec<char> = row.description.chars().collect();
+        if chars.len() > 28 {
+            format!("{:<28}", format!("{}...", chars[..25].iter().collect::<String>()))
+        } else {
+            format!("{:<28}", row.description)
+        }
     };
 
     // Build tool trail
