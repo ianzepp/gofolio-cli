@@ -261,7 +261,7 @@ fn render_tools_panel(frame: &mut Frame, area: Rect, state: &AppState) {
         };
         lines.push(Line::from(vec![
             Span::styled(
-                format!("  {}ms ", tc.duration_ms),
+                format!("  {:.2}s ", tc.duration_ms as f64 / 1000.0),
                 Style::default().fg(theme::MUTED),
             ),
             Span::styled(status_note, Style::default().fg(theme::MUTED)),

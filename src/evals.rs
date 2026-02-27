@@ -427,10 +427,11 @@ fn build_eval_result(
         Ok(run) => {
             let grade = grade_case(&eval_case, &run);
             println!(
-                "[{}] {} :: {} ({elapsed_ms}ms)",
+                "[{}] {} :: {} ({})",
                 if grade.pass { "PASS" } else { "FAIL" },
                 eval_case.id,
-                eval_case.description
+                eval_case.description,
+                format_seconds(elapsed_ms)
             );
             if !grade.pass {
                 if !grade.tier_a {
@@ -472,7 +473,7 @@ fn build_eval_result(
             }
         }
         Err(e) => {
-            println!("[ERROR] {} :: {} ({elapsed_ms}ms)", eval_case.id, e);
+            println!("[ERROR] {} :: {} ({})", eval_case.id, e, format_seconds(elapsed_ms));
             EvalResult {
                 case_id: eval_case.id,
                 model,
@@ -509,21 +510,28 @@ fn print_case_trace(run: &AgentCaseRun) {
     } else {
         for step in &run.steps {
             println!(
-                "  step {}: {}ms | {}+{} tok",
-                step.step_number, step.duration_ms, step.tokens_in, step.tokens_out
+                "  step {}: {} | {}+{} tok",
+                step.step_number,
+                format_seconds(step.duration_ms),
+                step.tokens_in,
+                step.tokens_out
             );
             if step.tool_calls.is_empty() {
                 println!("    tools: none");
             } else {
                 for tool_call in &step.tool_calls {
-                    println!("    tool {}: {}ms", tool_call.tool, tool_call.duration_ms);
+                    println!(
+                        "    tool {}: {}",
+                        tool_call.tool,
+                        format_seconds(tool_call.duration_ms)
+                    );
                 }
             }
         }
     }
     println!(
-        "  total: {}ms | {}+{} tok | verified={} confidence={:.0}%",
-        run.duration_ms,
+        "  total: {} | {}+{} tok | verified={} confidence={:.0}%",
+        format_seconds(run.duration_ms),
         run.input_tokens,
         run.output_tokens,
         run.verified,
@@ -557,8 +565,14 @@ pub fn report(args: ReportArgs) -> Result<(), String> {
     println!("Run: {run_id}");
     println!("Path: {}", run_dir.display());
     println!(
-        "Summary: total={} passed={} failed={} errors={} input_tokens={} output_tokens={} duration_ms={}",
-        total, passed, failed, errors, total_input_tokens, total_output_tokens, total_duration_ms
+        "Summary: total={} passed={} failed={} errors={} input_tokens={} output_tokens={} duration={}",
+        total,
+        passed,
+        failed,
+        errors,
+        total_input_tokens,
+        total_output_tokens,
+        format_seconds(total_duration_ms)
     );
 
     let mut by_model: BTreeMap<&str, (usize, usize, usize)> = BTreeMap::new();
@@ -744,7 +758,7 @@ fn print_model_summary(results: &[EvalResult]) {
     println!("Model summary:");
     for (model, summary) in per_model {
         println!(
-            "- {} total={} passed={} failed={} errors={} input_tokens={} output_tokens={} duration_ms={}",
+            "- {} total={} passed={} failed={} errors={} input_tokens={} output_tokens={} duration={}",
             model,
             summary.total,
             summary.passed,
@@ -752,9 +766,13 @@ fn print_model_summary(results: &[EvalResult]) {
             summary.errors,
             summary.input_tokens,
             summary.output_tokens,
-            summary.duration_ms
+            format_seconds(summary.duration_ms)
         );
     }
+}
+
+fn format_seconds(duration_ms: u64) -> String {
+    format!("{:.2}s", duration_ms as f64 / 1000.0)
 }
 
 fn print_model_comparison(results: &[EvalResult]) {

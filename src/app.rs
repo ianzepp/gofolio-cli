@@ -67,6 +67,7 @@ pub struct AppState {
     pub total_steps: usize,
     pub total_tool_calls: usize,
     pub latency_ms: u64,
+    latency_samples_ms: Vec<u64>,
     pub last_input_tokens: u64,
     pub verified: bool,
     pub confidence_label: ConfidenceLabel,
@@ -180,6 +181,7 @@ impl AppState {
             total_steps: 0,
             total_tool_calls: 0,
             latency_ms: 0,
+            latency_samples_ms: Vec::new(),
             last_input_tokens: 0,
             verified: false,
             confidence_label: ConfidenceLabel::Low,
@@ -241,6 +243,7 @@ impl AppState {
         self.total_steps = 0;
         self.total_tool_calls = 0;
         self.latency_ms = 0;
+        self.latency_samples_ms.clear();
         self.last_input_tokens = 0;
         self.verified = false;
         self.confidence_label = ConfidenceLabel::Low;
@@ -407,6 +410,7 @@ impl AppState {
                     .request_start
                     .map(|s| s.elapsed().as_millis() as u64)
                     .unwrap_or(0);
+                self.record_latency_sample(self.latency_ms);
                 let confidence_label_text = match &confidence_label {
                     ConfidenceLabel::High => "high",
                     ConfidenceLabel::Medium => "medium",
@@ -444,6 +448,7 @@ impl AppState {
                     .request_start
                     .map(|s| s.elapsed().as_millis() as u64)
                     .unwrap_or(0);
+                self.record_latency_sample(self.latency_ms);
                 self.push_warning(&format!("Error: {err}"));
             }
         }
@@ -667,7 +672,31 @@ impl AppState {
             .request_start
             .map(|s| s.elapsed().as_millis() as u64)
             .unwrap_or(0);
+        self.record_latency_sample(self.latency_ms);
         self.push_warning("Request canceled.");
+    }
+
+    pub fn latency_average_max_ms(&self) -> Option<(u64, u64)> {
+        if self.latency_samples_ms.is_empty() {
+            return None;
+        }
+        let total: u128 = self.latency_samples_ms.iter().map(|v| *v as u128).sum();
+        let avg = (total / self.latency_samples_ms.len() as u128) as u64;
+        let max = *self.latency_samples_ms.iter().max().unwrap_or(&0);
+        Some((avg, max))
+    }
+
+    fn record_latency_sample(&mut self, latency_ms: u64) {
+        if latency_ms == 0 {
+            return;
+        }
+        self.latency_samples_ms.push(latency_ms);
+        // Keep recent history bounded for UI-only percentile rendering.
+        const MAX_SAMPLES: usize = 500;
+        if self.latency_samples_ms.len() > MAX_SAMPLES {
+            let overflow = self.latency_samples_ms.len() - MAX_SAMPLES;
+            self.latency_samples_ms.drain(0..overflow);
+        }
     }
 }
 
@@ -705,6 +734,7 @@ fn host_port_from_url(url: &str) -> String {
         host_port.to_string()
     }
 }
+
 
 pub async fn run() -> io::Result<()> {
     let mut terminal = ratatui::init();

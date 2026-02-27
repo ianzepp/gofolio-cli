@@ -128,7 +128,10 @@ pub fn render_session_bar(frame: &mut Frame, area: Rect, state: &AppState) {
             style,
         ),
         sep.clone(),
-        Span::styled(format!("{}ms", state.latency_ms), style),
+        Span::styled(
+            format_latency_with_stats(state.latency_ms, state.latency_average_max_ms()),
+            style,
+        ),
         sep.clone(),
         Span::styled(
             format!(
@@ -221,5 +224,17 @@ fn format_usd_cost(cost: Option<f64>) -> String {
         Some(v) if v >= 0.01 => format!("${v:.4}"),
         Some(v) => format!("${v:.6}"),
         None => "--".to_string(),
+    }
+}
+
+fn format_latency_with_stats(latency_ms: u64, stats: Option<(u64, u64)>) -> String {
+    let current = format!("{:.2}s", latency_ms as f64 / 1000.0);
+    match stats {
+        Some((avg, max)) => format!(
+            "{current} · avg {:.2}s max {:.2}s",
+            avg as f64 / 1000.0,
+            max as f64 / 1000.0
+        ),
+        None => current,
     }
 }
