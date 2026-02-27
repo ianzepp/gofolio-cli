@@ -6,7 +6,8 @@ use crate::theme;
 /// Render markdown text into styled, wrapped ratatui Lines.
 pub fn render(input: &str, width: usize) -> Vec<Line<'static>> {
     let mut result = Vec::new();
-    let lines: Vec<&str> = input.split('\n').collect();
+    let normalized = normalize_input(input);
+    let lines: Vec<&str> = normalized.split('\n').collect();
     let mut i = 0;
 
     while i < lines.len() {
@@ -24,10 +25,11 @@ pub fn render(input: &str, width: usize) -> Vec<Line<'static>> {
         }
 
         // Headings
-        if let Some(text) = line
+        let line_trimmed_start = line.trim_start();
+        if let Some(text) = line_trimmed_start
             .strip_prefix("### ")
-            .or_else(|| line.strip_prefix("## "))
-            .or_else(|| line.strip_prefix("# "))
+            .or_else(|| line_trimmed_start.strip_prefix("## "))
+            .or_else(|| line_trimmed_start.strip_prefix("# "))
         {
             result.push(Line::from(Span::styled(
                 text.to_string(),
@@ -53,9 +55,9 @@ pub fn render(input: &str, width: usize) -> Vec<Line<'static>> {
         }
 
         // Fenced code block
-        if line.starts_with("```") {
+        if line_trimmed_start.starts_with("```") {
             i += 1;
-            while i < lines.len() && !lines[i].starts_with("```") {
+            while i < lines.len() && !lines[i].trim_start().starts_with("```") {
                 result.push(Line::from(Span::styled(
                     format!("  {}", lines[i]),
                     Style::default().fg(theme::MUTED),
@@ -67,10 +69,10 @@ pub fn render(input: &str, width: usize) -> Vec<Line<'static>> {
         }
 
         // Markdown pipe tables: consecutive lines starting with |
-        if line.starts_with('|') {
+        if line_trimmed_start.starts_with('|') {
             let mut table_lines = Vec::new();
-            while i < lines.len() && lines[i].starts_with('|') {
-                table_lines.push(lines[i]);
+            while i < lines.len() && lines[i].trim_start().starts_with('|') {
+                table_lines.push(lines[i].trim_start());
                 i += 1;
             }
             result.extend(render_table_block(&table_lines));
@@ -141,15 +143,27 @@ fn is_render_blank_line(line: &Line<'_>) -> bool {
 /// Check if a line starts a block-level element.
 fn is_block_start(line: &str) -> bool {
     let trimmed = line.trim();
+    let trimmed_start = line.trim_start();
     trimmed.is_empty()
-        || line.starts_with("# ")
-        || line.starts_with("## ")
-        || line.starts_with("### ")
-        || line.starts_with('|')
-        || line.starts_with("```")
+        || trimmed_start.starts_with("# ")
+        || trimmed_start.starts_with("## ")
+        || trimmed_start.starts_with("### ")
+        || trimmed_start.starts_with('|')
+        || trimmed_start.starts_with("```")
         || is_preformatted(line)
         || parse_bullet(line).is_some()
         || (trimmed.len() >= 3 && is_horizontal_rule(trimmed))
+}
+
+/// Normalize input text for terminal rendering:
+/// - convert CRLF/CR to LF
+/// - strip control characters except LF and TAB
+fn normalize_input(input: &str) -> String {
+    let input = input.replace("\r\n", "\n").replace('\r', "\n");
+    input
+        .chars()
+        .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
+        .collect()
 }
 
 /// Check if text is a horizontal rule: 3+ of the same char (-, *, _), optionally with spaces.

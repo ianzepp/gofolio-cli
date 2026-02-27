@@ -73,6 +73,13 @@ fn heading_followed_by_text() {
     assert_eq!(t[2], "Some text here");
 }
 
+#[test]
+fn indented_heading_renders() {
+    let result = render("  ## Indented Title", 80);
+    let t = text(&result);
+    assert_eq!(t, vec!["Indented Title"]);
+}
+
 // ============================================================================
 // Horizontal rules
 // ============================================================================
@@ -160,6 +167,16 @@ fn simple_table() {
     assert!(t[1].contains('\u{2500}')); // separator line
     assert!(t[2].contains("Foo"));
     assert!(t[2].contains("42"));
+}
+
+#[test]
+fn indented_table_renders() {
+    let input = "  | Name | Value |\n  | --- | --- |\n  | Foo | 42 |";
+    let result = render(input, 80);
+    let t = text(&result);
+    assert_eq!(t.len(), 3);
+    assert!(t[0].contains("Name"));
+    assert!(t[2].contains("Foo"));
 }
 
 #[test]
@@ -288,6 +305,14 @@ fn plain_text_no_formatting() {
     assert_eq!(t[0], "Just plain text.");
     assert!(!has_style(&result, Modifier::BOLD));
     assert!(!has_style(&result, Modifier::ITALIC));
+}
+
+#[test]
+fn crlf_and_control_chars_are_sanitized() {
+    let input = "Hello\r\nWorld\u{0007}\r\nDone";
+    let result = render(input, 80);
+    let t = text(&result);
+    assert_eq!(t[0], "Hello World Done");
 }
 
 // ============================================================================
