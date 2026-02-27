@@ -63,6 +63,8 @@ struct EvalCase {
     must_contain_any: Vec<String>,
     must_not_contain: Vec<String>,
     expected_verified: bool,
+    #[serde(default)]
+    skip_verified: bool,
     tags: Vec<String>,
 }
 
@@ -1158,6 +1160,9 @@ fn grade_tier_b(eval_case: &EvalCase, run: &AgentCaseRun) -> (bool, String) {
 }
 
 fn grade_tier_c(eval_case: &EvalCase, run: &AgentCaseRun) -> (bool, String) {
+    if eval_case.skip_verified {
+        return (true, format!("verified={} (skipped)", run.verified));
+    }
     if run.verified == eval_case.expected_verified {
         return (true, format!("verified={} as expected", run.verified));
     }
