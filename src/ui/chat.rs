@@ -3,6 +3,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Bar, BarChart, BarGroup, Block, Paragraph, Sparkline};
+use std::sync::OnceLock;
 
 use crate::app::{AppState, ChartData};
 use crate::markdown;
@@ -82,11 +83,19 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
             theme::WHITE
         };
 
-        // Render agent messages with markdown, user/system as plain text
+        // Render agent messages with markdown by default, unless disabled
+        // for debugging via env var.
         let mut msg_lines: Vec<Line<'static>> = if msg.role == "agent" {
-            let mut lines = markdown::render(&msg.text, content_width);
-            markdown::apply_default_color(&mut lines, text_color);
-            lines
+            if markdown_disabled() {
+                msg.text
+                    .lines()
+                    .flat_map(|line| wrap_line(line, content_width, text_color))
+                    .collect()
+            } else {
+                let mut lines = markdown::render(&msg.text, content_width);
+                markdown::apply_default_color(&mut lines, text_color);
+                lines
+            }
         } else {
             msg.text
                 .lines()
@@ -262,8 +271,26 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 }
 
+fn markdown_disabled() -> bool {
+    static DISABLED: OnceLock<bool> = OnceLock::new();
+    *DISABLED.get_or_init(|| {
+        std::env::var("GHOSTFOLIO_DISABLE_MARKDOWN")
+            .ok()
+            .or_else(|| std::env::var("GF_DISABLE_MARKDOWN").ok())
+            .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+            .unwrap_or(false)
+    })
+}
+
 fn wrap_line(line: &str, max_width: usize, color: ratatui::style::Color) -> Vec<Line<'static>> {
-    if line.len() <= max_width {
+    if max_width == 0 {
+        return vec![Line::from(Span::styled(
+            line.to_string(),
+            Style::default().fg(color),
+        ))];
+    }
+
+    if line.chars().count() <= max_width {
         return vec![Line::from(Span::styled(
             line.to_string(),
             Style::default().fg(color),
@@ -271,20 +298,35 @@ fn wrap_line(line: &str, max_width: usize, color: ratatui::style::Color) -> Vec<
     }
 
     let mut wrapped = Vec::new();
-    let mut remaining = line;
-    while remaining.len() > max_width {
-        let split = remaining[..max_width].rfind(' ').unwrap_or(max_width);
-        wrapped.push(Line::from(Span::styled(
-            remaining[..split].to_string(),
-            Style::default().fg(color),
-        )));
-        remaining = remaining[split..].trim_start();
+    let mut remaining = line.to_string();
+    while remaining.chars().count() > max_width {
+        let head = take_prefix_chars(&remaining, max_width);
+        let mut split_byte = head.rfind(' ').unwrap_or(head.len());
+        if split_byte == 0 {
+            // Avoid empty-line emissions when the line starts with whitespace.
+            split_byte = head.len();
+        }
+        let chunk = remaining[..split_byte].trim();
+        if !chunk.is_empty() {
+            wrapped.push(Line::from(Span::styled(
+                chunk.to_string(),
+                Style::default().fg(color),
+            )));
+        }
+        remaining = remaining[split_byte..].trim_start().to_string();
     }
-    if !remaining.is_empty() {
+    if !remaining.trim().is_empty() {
         wrapped.push(Line::from(Span::styled(
-            remaining.to_string(),
+            remaining,
             Style::default().fg(color),
         )));
     }
     wrapped
+}
+
+fn take_prefix_chars(s: &str, max_chars: usize) -> String {
+    if max_chars == 0 || s.is_empty() {
+        return String::new();
+    }
+    s.chars().take(max_chars).collect()
 }

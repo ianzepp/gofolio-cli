@@ -356,6 +356,13 @@ fn wraps_at_width() {
 }
 
 #[test]
+fn unicode_wrap_does_not_break_on_byte_boundaries() {
+    let result = render("📈📉📊📈📉📊", 2);
+    let t = text(&result);
+    assert!(!t.join("").trim().is_empty());
+}
+
+#[test]
 fn long_word_hard_breaks() {
     let result = render("abcdefghij", 5);
     let t = text(&result);

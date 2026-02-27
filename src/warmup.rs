@@ -1,14 +1,7 @@
 use tokio::sync::oneshot;
-use tracing::{info, warn};
+use tracing::warn;
 
 use crate::api::GhostfolioClient;
-use crate::text::truncate_utf8;
-
-/// Pre-fetched portfolio context for the LLM.
-pub struct WarmupData {
-    pub context: String,
-    pub portfolio: PortfolioSummary,
-}
 
 /// Structured portfolio data for the sidebar display.
 #[derive(Debug, Clone, Default)]
@@ -36,96 +29,49 @@ pub struct AccountRow {
     pub value: f64,
 }
 
-/// Spawn background tasks to fetch accounts, holdings, and performance,
-/// then format them into a context string the LLM can consume.
-pub fn spawn_warmup(client: GhostfolioClient) -> oneshot::Receiver<WarmupData> {
+pub fn spawn_warmup(client: GhostfolioClient) -> oneshot::Receiver<PortfolioSummary> {
     let (tx, rx) = oneshot::channel();
-
     tokio::spawn(async move {
-        let result = fetch_context(&client).await;
-        let _ = tx.send(result);
+        let summary = fetch_portfolio_summary(&client).await;
+        let _ = tx.send(summary);
     });
-
     rx
 }
 
-async fn fetch_context(client: &GhostfolioClient) -> WarmupData {
-    // Fetch accounts, holdings, and performance in parallel
+async fn fetch_portfolio_summary(client: &GhostfolioClient) -> PortfolioSummary {
     let (accounts, holdings, performance) = tokio::join!(
         client.get("/api/v1/account"),
         client.get("/api/v1/portfolio/holdings"),
         client.get_with_query("/api/v2/portfolio/performance", &[("range", "max")]),
     );
 
-    let mut sections = Vec::new();
     let mut summary = PortfolioSummary::default();
 
     match accounts {
-        Ok(data) => {
-            info!("warmup: accounts loaded");
-            extract_accounts(&data, &mut summary);
-            sections.push(format!(
-                "## Accounts\n```json\n{}\n```",
-                truncate_json(&data)
-            ));
-        }
-        Err(e) => warn!(error = %e, "warmup: failed to fetch accounts"),
+        Ok(data) => extract_accounts(&data, &mut summary),
+        Err(e) => warn!(error = %e, "warmup: accounts fetch failed"),
     }
-
     match holdings {
-        Ok(data) => {
-            info!("warmup: holdings loaded");
-            extract_holdings(&data, &mut summary);
-            sections.push(format!(
-                "## Holdings\n```json\n{}\n```",
-                truncate_json(&data)
-            ));
-        }
-        Err(e) => warn!(error = %e, "warmup: failed to fetch holdings"),
+        Ok(data) => extract_holdings(&data, &mut summary),
+        Err(e) => warn!(error = %e, "warmup: holdings fetch failed"),
     }
-
     match performance {
-        Ok(data) => {
-            info!("warmup: performance loaded");
-            extract_performance(&data, &mut summary);
-            sections.push(format!(
-                "## Performance\n```json\n{}\n```",
-                truncate_json(&data)
-            ));
-        }
-        Err(e) => warn!(error = %e, "warmup: failed to fetch performance"),
+        Ok(data) => extract_performance(&data, &mut summary),
+        Err(e) => warn!(error = %e, "warmup: performance fetch failed"),
     }
 
-    let context = if sections.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "Here is the user's current portfolio data (pre-loaded for context — do not repeat it back unless asked):\n\n{}",
-            sections.join("\n\n")
-        )
-    };
-
-    info!(len = context.len(), "warmup: context ready");
-    WarmupData {
-        context,
-        portfolio: summary,
-    }
+    summary
 }
 
 fn extract_holdings(data: &serde_json::Value, summary: &mut PortfolioSummary) {
-    // Holdings endpoint returns { holdings: [...] }
     let arr = data
         .get("holdings")
         .and_then(|v| v.as_array())
         .or_else(|| data.as_array());
-
     let Some(holdings) = arr else { return };
 
     summary.num_holdings = holdings.len();
-
-    // Collect top holdings by allocationInPercentage
     let mut rows: Vec<HoldingRow> = holdings.iter().filter_map(parse_holding_row).collect();
-
     rows.sort_by(|a, b| {
         b.allocation_pct
             .partial_cmp(&a.allocation_pct)
@@ -136,18 +82,13 @@ fn extract_holdings(data: &serde_json::Value, summary: &mut PortfolioSummary) {
 }
 
 fn extract_accounts(data: &serde_json::Value, summary: &mut PortfolioSummary) {
-    // Account endpoint typically returns:
-    // { totalValueInBaseCurrency, accounts: [...] }
-    // but we also support a root-level array for compatibility.
     let arr = data
         .get("accounts")
         .and_then(|v| v.as_array())
         .or_else(|| data.as_array());
-
     let Some(accounts) = arr else { return };
 
     summary.num_accounts = accounts.len();
-
     if summary.total_value.is_none() {
         summary.total_value = data
             .get("totalValueInBaseCurrency")
@@ -166,7 +107,6 @@ fn extract_accounts(data: &serde_json::Value, summary: &mut PortfolioSummary) {
 }
 
 fn extract_performance(data: &serde_json::Value, summary: &mut PortfolioSummary) {
-    // v2 performance returns { performance: { ... } }
     let perf = data.get("performance").unwrap_or(data);
 
     summary.total_value = summary.total_value.or_else(|| {
@@ -196,7 +136,6 @@ fn extract_performance(data: &serde_json::Value, summary: &mut PortfolioSummary)
 
 fn parse_account_row(a: &serde_json::Value) -> Option<AccountRow> {
     let name = a.get("name").and_then(|v| v.as_str())?;
-    // Prefer account value (cash + holdings), then base-currency balance, then raw balance.
     let value = a
         .get("valueInBaseCurrency")
         .and_then(|v| v.as_f64())
@@ -222,14 +161,4 @@ fn parse_holding_row(h: &serde_json::Value) -> Option<HoldingRow> {
         name: name.to_string(),
         allocation_pct: alloc * 100.0,
     })
-}
-
-/// Truncate JSON to avoid blowing up the context window.
-fn truncate_json(value: &serde_json::Value) -> String {
-    let s = serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string());
-    if s.len() > 8000 {
-        format!("{}... (truncated)", truncate_utf8(&s, 8000))
-    } else {
-        s
-    }
 }

@@ -129,6 +129,10 @@ pub fn render(input: &str, width: usize) -> Vec<Line<'static>> {
         result.pop();
     }
 
+    if should_fallback_to_plain(&normalized, &result) {
+        return render_plain_fallback(&normalized, width);
+    }
+
     result
 }
 
@@ -164,6 +168,42 @@ fn normalize_input(input: &str) -> String {
         .chars()
         .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
         .collect()
+}
+
+fn should_fallback_to_plain(input: &str, rendered: &[Line<'_>]) -> bool {
+    let input_visible = input.chars().filter(|c| !c.is_whitespace()).count();
+    if input_visible == 0 {
+        return false;
+    }
+
+    let rendered_visible = rendered
+        .iter()
+        .flat_map(|l| l.spans.iter())
+        .flat_map(|s| s.content.chars())
+        .filter(|c| !c.is_whitespace())
+        .count();
+
+    // If parsed markdown output is implausibly sparse, fall back to plain text
+    // to avoid blank-chat rendering from malformed edge cases.
+    rendered_visible * 8 < input_visible
+}
+
+fn render_plain_fallback(input: &str, width: usize) -> Vec<Line<'static>> {
+    let mut out = Vec::new();
+    for line in input.lines() {
+        if line.trim().is_empty() {
+            let last_is_blank = out.last().is_some_and(is_render_blank_line);
+            if !last_is_blank && !out.is_empty() {
+                out.push(Line::from(""));
+            }
+            continue;
+        }
+        out.extend(wrap_line(
+            Line::from(Span::raw(line.to_string())),
+            width,
+        ));
+    }
+    out
 }
 
 /// Check if text is a horizontal rule: 3+ of the same char (-, *, _), optionally with spaces.
@@ -396,7 +436,7 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
         let words = split_words(&content);
 
         for word in words {
-            let word_len = word.len();
+            let word_len = text_width(&word);
             if word_len == 0 {
                 continue;
             }
@@ -407,17 +447,17 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
                     rows.push(Vec::new());
                     col = 0;
                 }
-                let mut remaining = word.as_str();
+                let mut remaining = word;
                 while !remaining.is_empty() {
-                    let take = remaining.len().min(width);
-                    let (chunk, rest) = remaining.split_at(take);
-                    push_span_to_last_row(&mut rows, Span::styled(chunk.to_string(), style));
+                    let (chunk, rest) = take_prefix_chars(&remaining, width);
+                    let chunk_width = text_width(&chunk);
+                    push_span_to_last_row(&mut rows, Span::styled(chunk, style));
                     remaining = rest;
                     if !remaining.is_empty() {
                         rows.push(Vec::new());
                         col = 0;
                     } else {
-                        col = take;
+                        col = chunk_width;
                     }
                 }
                 continue;
@@ -432,7 +472,7 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
                     continue;
                 }
                 push_span_to_last_row(&mut rows, Span::styled(trimmed.to_string(), style));
-                col += trimmed.len();
+                col += text_width(trimmed);
             } else {
                 push_span_to_last_row(&mut rows, Span::styled(word, style));
                 col += word_len;
@@ -443,6 +483,30 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
     rows.into_iter()
         .map(|spans| Line::from(spans).style(line.style))
         .collect()
+}
+
+fn text_width(s: &str) -> usize {
+    s.chars().count()
+}
+
+fn take_prefix_chars(s: &str, max_chars: usize) -> (String, String) {
+    if max_chars == 0 || s.is_empty() {
+        return (String::new(), s.to_string());
+    }
+
+    let mut end_byte = s.len();
+    let mut count = 0usize;
+    for (idx, ch) in s.char_indices() {
+        if count == max_chars {
+            end_byte = idx;
+            break;
+        }
+        count += 1;
+        end_byte = idx + ch.len_utf8();
+    }
+
+    let (head, tail) = s.split_at(end_byte);
+    (head.to_string(), tail.to_string())
 }
 
 fn push_span_to_last_row(rows: &mut Vec<Vec<Span<'static>>>, span: Span<'static>) {

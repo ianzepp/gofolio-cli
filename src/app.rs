@@ -92,7 +92,7 @@ pub struct AppState {
     agent_task: Option<tokio::task::JoinHandle<()>>,
     request_start: Option<Instant>,
     cancel_esc_at: Option<Instant>,
-    warmup_rx: Option<tokio::sync::oneshot::Receiver<warmup::WarmupData>>,
+    warmup_rx: Option<tokio::sync::oneshot::Receiver<PortfolioSummary>>,
     market_rx: Option<mpsc::UnboundedReceiver<Vec<MarketQuote>>>,
     langsmith: Option<LangSmithConfig>,
 }
@@ -699,26 +699,10 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
         let has_event =
             tokio::task::block_in_place(|| event::poll(std::time::Duration::from_millis(50)))?;
 
-        // Check warmup channel
         if let Some(ref mut rx) = state.warmup_rx {
-            if let Ok(data) = rx.try_recv() {
-                state.portfolio = Some(data.portfolio);
-                if !data.context.is_empty() {
-                    // Inject as a prefilled user→assistant exchange so the LLM has context
-                    state.history.push(Message {
-                        role: "user".to_string(),
-                        content: Content::Text(data.context),
-                    });
-                    state.history.push(Message {
-                        role: "assistant".to_string(),
-                        content: Content::Text(
-                            "Understood. I have your portfolio data loaded and ready. How can I help?".to_string(),
-                        ),
-                    });
-                    state.push_system("Portfolio data loaded. Type a message to begin.");
-                } else {
-                    state.push_system("Ready. Type a message to begin.");
-                }
+            if let Ok(summary) = rx.try_recv() {
+                state.portfolio = Some(summary);
+                state.push_system("Portfolio data loaded. Type a message to begin.");
                 state.warmup_rx = None;
             }
         }
