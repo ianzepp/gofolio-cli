@@ -32,7 +32,7 @@
 - [x] Dataset mix meets minima (20+ happy path, 10+ edge, 10+ adversarial, 10+ multi-step)
 - [x] Multi-model sweep support (`cli/evals/models.yaml` has 34 models)
 - [x] Coverage matrix reporting (`ghostfolio evals report` prints category/difficulty breakdown and category × difficulty matrix)
-- [ ] Cost estimation + p50/p95 latency reporting in eval output (not implemented)
+- [~] Cost estimation + latency reporting in eval output (cost estimation implemented in CLI status UI; p50/p95 percentile reporting is not implemented, current latency summary surfaces current/avg/max in seconds)
 - [~] Rubric scorer (Tier D, LLM-as-judge): rubric config exists, scorer not implemented
 - [x] Replay command for re-grading historical results (`ghostfolio evals replay --run-id <id>` or `--path <run-dir>`)
 
