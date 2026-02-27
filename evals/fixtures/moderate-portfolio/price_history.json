@@ -17,6 +17,36 @@
     "dataSource": "YAHOO",
     "symbol": "AAPL"
   },
+  "YAHOO:MSFT": {
+    "currency": "USD",
+    "historicalData": [
+      { "date": "2025-10-01T00:00:00.000Z", "value": 415.20 },
+      { "date": "2025-10-15T00:00:00.000Z", "value": 421.80 },
+      { "date": "2025-11-01T00:00:00.000Z", "value": 418.50 },
+      { "date": "2025-11-15T00:00:00.000Z", "value": 425.30 },
+      { "date": "2025-12-01T00:00:00.000Z", "value": 430.10 },
+      { "date": "2025-12-15T00:00:00.000Z", "value": 433.80 },
+      { "date": "2025-12-29T00:00:00.000Z", "value": 437.60 }
+    ],
+    "marketPrice": 437.60,
+    "dataSource": "YAHOO",
+    "symbol": "MSFT"
+  },
+  "YAHOO:GOOGL": {
+    "currency": "USD",
+    "historicalData": [
+      { "date": "2025-10-01T00:00:00.000Z", "value": 162.40 },
+      { "date": "2025-10-15T00:00:00.000Z", "value": 165.90 },
+      { "date": "2025-11-01T00:00:00.000Z", "value": 169.20 },
+      { "date": "2025-11-15T00:00:00.000Z", "value": 171.80 },
+      { "date": "2025-12-01T00:00:00.000Z", "value": 174.50 },
+      { "date": "2025-12-15T00:00:00.000Z", "value": 177.30 },
+      { "date": "2025-12-29T00:00:00.000Z", "value": 180.15 }
+    ],
+    "marketPrice": 180.15,
+    "dataSource": "YAHOO",
+    "symbol": "GOOGL"
+  },
   "YAHOO:TSLA": {
     "currency": "USD",
     "historicalData": [

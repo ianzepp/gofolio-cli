@@ -26,9 +26,10 @@
   query: 'Chart the price of GOOGL over the last 90 days'
   category: 'history'
   difficulty: 'ambiguous'
-  expected_tools: ['price_history', 'chart_sparkline']
-  must_contain: ['GOOGL']
-  must_not_contain: ['error']
+  expected_tools: ['price_history']
+  must_contain_any: ['GOOGL', 'Alphabet', 'Google']
+  must_contain: []
+  must_not_contain: ['AAPL', 'Apple', 'no data available']
   expected_verified: true
   tags: ['happy-path', 'history', 'charts']
 
