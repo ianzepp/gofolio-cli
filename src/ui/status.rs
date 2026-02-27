@@ -115,6 +115,11 @@ pub fn render_session_bar(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let right_spans = vec![
         Span::styled(
+            format!("Cost {}", format_usd_cost(state.estimated_total_cost_usd())),
+            style,
+        ),
+        sep.clone(),
+        Span::styled(
             format!(
                 "Tkn {}/{}",
                 format_count(state.total_input_tokens),
@@ -206,5 +211,15 @@ fn confidence_short(label: &ConfidenceLabel) -> &'static str {
         ConfidenceLabel::High => "HIGH",
         ConfidenceLabel::Medium => "MED",
         ConfidenceLabel::Low => "LOW",
+    }
+}
+
+fn format_usd_cost(cost: Option<f64>) -> String {
+    match cost {
+        Some(v) if v >= 10.0 => format!("${v:.2}"),
+        Some(v) if v >= 1.0 => format!("${v:.3}"),
+        Some(v) if v >= 0.01 => format!("${v:.4}"),
+        Some(v) => format!("${v:.6}"),
+        None => "--".to_string(),
     }
 }

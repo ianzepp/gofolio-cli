@@ -98,6 +98,19 @@ pub struct AppState {
 }
 
 impl AppState {
+    pub fn estimated_total_cost_usd(&self) -> Option<f64> {
+        let provider = self.active_provider?;
+        let model = self
+            .models_for_provider(provider)
+            .iter()
+            .find(|m| m.id == self.model)?;
+        let input = model.input_cost_per_token?;
+        let output = model.output_cost_per_token?;
+        Some(
+            (self.total_input_tokens as f64 * input) + (self.total_output_tokens as f64 * output),
+        )
+    }
+
     fn header_keys_from_statuses(
         statuses: &[ProviderKeyStatus],
         langsmith: Option<&LangSmithConfig>,
