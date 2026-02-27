@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
 clap = { version = "4", features = ["derive"] }
 ratatui = "0.30"
 crossterm = "0.28"

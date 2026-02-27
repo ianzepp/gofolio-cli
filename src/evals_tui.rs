@@ -58,7 +58,7 @@ struct RowState {
 }
 
 struct TuiState {
-    active_rows: Vec<RowState>,
+    rows: Vec<RowState>,
     completed: usize,
     passed: usize,
     failed: usize,
@@ -76,7 +76,7 @@ const SPINNER: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧
 impl TuiState {
     fn new(suite_name: String, total_cases: usize, pool_size: usize) -> Self {
         Self {
-            active_rows: Vec::new(),
+            rows: Vec::new(),
             completed: 0,
             passed: 0,
             failed: 0,
@@ -96,7 +96,7 @@ impl TuiState {
                 case_id,
                 description,
             } => {
-                self.active_rows.push(RowState {
+                self.rows.push(RowState {
                     case_id,
                     description,
                     tools: Vec::new(),
@@ -108,7 +108,7 @@ impl TuiState {
                 tool_name,
                 ok,
             } => {
-                if let Some(row) = self.active_rows.iter_mut().find(|r| r.case_id == case_id) {
+                if let Some(row) = self.rows.iter_mut().find(|r| r.case_id == case_id) {
                     row.tools.push(ToolEntry {
                         name: tool_name,
                         ok,
@@ -120,7 +120,7 @@ impl TuiState {
                 pass,
                 error,
             } => {
-                if let Some(row) = self.active_rows.iter_mut().find(|r| r.case_id == case_id) {
+                if let Some(row) = self.rows.iter_mut().find(|r| r.case_id == case_id) {
                     row.status = if let Some(e) = error {
                         self.errors += 1;
                         RowStatus::Error(e)
@@ -133,8 +133,6 @@ impl TuiState {
                     };
                 }
                 self.completed += 1;
-                // Remove completed rows to make room for new ones
-                self.active_rows.retain(|r| matches!(r.status, RowStatus::Running));
             }
             TuiEvent::AllDone => {
                 self.done = true;
@@ -259,16 +257,20 @@ fn render_header(frame: &mut ratatui::Frame, area: Rect, state: &TuiState, model
 }
 
 fn render_rows(frame: &mut ratatui::Frame, area: Rect, state: &TuiState) {
-    let mut lines = Vec::new();
     let max_rows = area.height as usize;
     let spinner_char = SPINNER[state.spinner_frame];
+    let width = area.width as usize;
 
-    for (i, row) in state.active_rows.iter().enumerate() {
-        if i >= max_rows {
-            break;
-        }
-        lines.push(render_row(row, spinner_char, area.width as usize));
-    }
+    // Render all rows in order (completed + active), auto-scroll to bottom
+    let all_lines: Vec<Line<'static>> = state
+        .rows
+        .iter()
+        .map(|row| render_row(row, spinner_char, width))
+        .collect();
+
+    // Show the last N rows that fit in the viewport
+    let skip = all_lines.len().saturating_sub(max_rows);
+    let mut lines: Vec<Line<'static>> = all_lines.into_iter().skip(skip).collect();
 
     // Fill remaining lines with blanks
     while lines.len() < max_rows {

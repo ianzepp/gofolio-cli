@@ -222,23 +222,48 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
             let pool_size = key_pool.pool_size();
             let ml = model_label.clone();
 
+            let cancel = tokio_util::sync::CancellationToken::new();
+
+            let tui_cancel = cancel.clone();
             let tui_handle = tokio::spawn(async move {
-                crate::evals_tui::run_tui(tui_rx, &suite_name, total_cases, pool_size, &ml).await
+                let result =
+                    crate::evals_tui::run_tui(tui_rx, &suite_name, total_cases, pool_size, &ml)
+                        .await;
+                // If TUI exited early (user pressed q), cancel the workers
+                if result.is_err() {
+                    tui_cancel.cancel();
+                }
+                result
             });
 
-            let mut model_results = run_cases_parallel_tui(
-                &cases,
-                &pool_target,
-                &dispatcher,
-                &key_pool,
-                langsmith.as_ref(),
-                tui_tx,
-            )
-            .await?;
+            let worker_cancel = cancel.clone();
+            let worker_handle = tokio::spawn({
+                let cases: Vec<EvalCase> = cases.iter().map(|c| (*c).clone()).collect();
+                let pool_target = pool_target.clone();
+                let dispatcher = dispatcher.clone();
+                let langsmith = langsmith.clone();
+                async move {
+                    let case_refs: Vec<&EvalCase> = cases.iter().collect();
+                    run_cases_parallel_tui(
+                        &case_refs,
+                        &pool_target,
+                        &dispatcher,
+                        &key_pool,
+                        langsmith.as_ref(),
+                        tui_tx,
+                        &worker_cancel,
+                    )
+                    .await
+                }
+            });
 
-            if let Err(e) = tui_handle.await {
-                eprintln!("TUI task error: {e}");
-            }
+            // Workers run until done or cancelled; TUI cancels on `q`
+            let mut model_results = worker_handle
+                .await
+                .map_err(|e| format!("worker join: {e}"))??;
+
+            // TUI may already be done (AllDone received), or cancelled — either way wait
+            let _ = tui_handle.await;
 
             results.append(&mut model_results);
         } else {
@@ -675,12 +700,19 @@ async fn run_cases_parallel_tui(
     key_pool: &KeyPool,
     langsmith: Option<&LangSmithConfig>,
     tui_tx: mpsc::UnboundedSender<TuiEvent>,
+    cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<Vec<EvalResult>, String> {
     let mut results = Vec::with_capacity(cases.len());
     let mut join_set = JoinSet::new();
     let mut index = 0usize;
 
     while index < cases.len() || !join_set.is_empty() {
+        // Check for cancellation
+        if cancel.is_cancelled() {
+            join_set.abort_all();
+            break;
+        }
+
         // Fill up to pool_size concurrent tasks
         while join_set.len() < key_pool.pool_size() && index < cases.len() {
             let eval_case = (*cases[index]).clone();
@@ -692,8 +724,11 @@ async fn run_cases_parallel_tui(
             let langsmith = langsmith.cloned();
             let tx = tui_tx.clone();
 
-            // Lease a key — blocks if all keys are in use
-            let lease = key_pool.lease().await;
+            // Lease a key — blocks if all keys are in use; bail on cancel
+            let lease = tokio::select! {
+                l = key_pool.lease() => l,
+                _ = cancel.cancelled() => break,
+            };
 
             join_set.spawn(async move {
                 let _ = tx.send(TuiEvent::CaseStarted {
@@ -773,11 +808,23 @@ async fn run_cases_parallel_tui(
             });
         }
 
-        // Collect one completed result
-        if let Some(joined) = join_set.join_next().await {
-            let (eval_case, model, elapsed_ms, result) =
-                joined.map_err(|e| format!("parallel task join error: {e}"))?;
-            results.push(build_eval_result_quiet(eval_case, model, elapsed_ms, result));
+        // Collect one completed result, or bail on cancel
+        if !join_set.is_empty() {
+            tokio::select! {
+                Some(joined) = join_set.join_next() => {
+                    match joined {
+                        Ok((eval_case, model, elapsed_ms, result)) => {
+                            results.push(build_eval_result_quiet(eval_case, model, elapsed_ms, result));
+                        }
+                        Err(_) if cancel.is_cancelled() => break,
+                        Err(e) => return Err(format!("parallel task join error: {e}")),
+                    }
+                }
+                _ = cancel.cancelled() => {
+                    join_set.abort_all();
+                    break;
+                }
+            }
         }
     }
 
