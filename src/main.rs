@@ -32,6 +32,21 @@ enum Command {
     Chat,
     /// Run eval suites against the in-process CLI agent
     Evals {
+        #[command(subcommand)]
+        command: EvalsCommand,
+    },
+    /// Show or edit configuration
+    Config {
+        /// Set a config key (e.g., ghostfolio_url=http://localhost:3333)
+        #[arg(value_name = "KEY=VALUE")]
+        set: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum EvalsCommand {
+    /// Run eval suites against the in-process CLI agent
+    Run {
         /// Suite id from evals/suites.yaml
         #[arg(long, default_value = "quick")]
         suite: String,
@@ -63,11 +78,22 @@ enum Command {
         #[arg(long, default_value_t = false)]
         no_tui: bool,
     },
-    /// Show or edit configuration
-    Config {
-        /// Set a config key (e.g., ghostfolio_url=http://localhost:3333)
-        #[arg(value_name = "KEY=VALUE")]
-        set: Option<String>,
+    /// Print summary and coverage matrix for an eval run
+    Report {
+        /// Evals root path (auto-detected from evals/ or cli/evals/)
+        #[arg(long)]
+        evals_root: Option<String>,
+        /// Run id to report (defaults to latest run dir)
+        #[arg(long)]
+        run_id: Option<String>,
+    },
+    /// Show stored eval JSON for a run path or specific case
+    Get {
+        /// Run result directory path or JSON file path
+        path: String,
+        /// Case id when path is a run directory
+        #[arg(long = "case")]
+        case_id: Option<String>,
     },
 }
 
@@ -84,35 +110,57 @@ async fn main() {
                 std::process::exit(1);
             }
         }
-        Command::Evals {
-            suite,
-            case_ids,
-            model,
-            models,
-            provider,
-            evals_root,
-            fixture_dir,
-            live,
-            list_suites,
-            no_tui,
-        } => {
-            let args = evals::TestArgs {
+        Command::Evals { command } => match command {
+            EvalsCommand::Run {
                 suite,
                 case_ids,
                 model,
                 models,
                 provider,
-                evals_root: evals_root.map(std::path::PathBuf::from),
-                fixture_dir: fixture_dir.map(std::path::PathBuf::from),
+                evals_root,
+                fixture_dir,
                 live,
                 list_suites,
                 no_tui,
-            };
-            if let Err(e) = evals::run(args).await {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
+            } => {
+                let args = evals::TestArgs {
+                    suite,
+                    case_ids,
+                    model,
+                    models,
+                    provider,
+                    evals_root: evals_root.map(std::path::PathBuf::from),
+                    fixture_dir: fixture_dir.map(std::path::PathBuf::from),
+                    live,
+                    list_suites,
+                    no_tui,
+                };
+                if let Err(e) = evals::run(args).await {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
             }
-        }
+            EvalsCommand::Report { evals_root, run_id } => {
+                let args = evals::ReportArgs {
+                    evals_root: evals_root.map(std::path::PathBuf::from),
+                    run_id,
+                };
+                if let Err(e) = evals::report(args) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            EvalsCommand::Get { path, case_id } => {
+                let args = evals::GetArgs {
+                    path: std::path::PathBuf::from(path),
+                    case_id,
+                };
+                if let Err(e) = evals::get(args) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        },
         Command::Config { set } => {
             if let Some(kv) = set {
                 match kv.split_once('=') {

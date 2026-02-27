@@ -2,6 +2,8 @@
 
 `cli/` is the standalone Rust terminal application for Ghostfolio chat + evals.
 
+All `cargo` commands below are intended to be run from the `cli/` directory.
+
 ## What This CLI Includes
 
 - Interactive Bloomberg-style chat UI (`ghostfolio` / `ghostfolio chat`)
@@ -42,7 +44,7 @@ Default command is `chat`.
 ### `chat` (default)
 
 ```bash
-cargo run --manifest-path cli/Cargo.toml -- chat
+cargo run -- chat
 ```
 
 Starts the interactive terminal app:
@@ -80,21 +82,21 @@ Slash commands:
 Show current config:
 
 ```bash
-cargo run --manifest-path cli/Cargo.toml -- config
+cargo run -- config
 ```
 
 Set config values:
 
 ```bash
-cargo run --manifest-path cli/Cargo.toml -- config ghostfolio_url=http://localhost:3333
-cargo run --manifest-path cli/Cargo.toml -- config access_token=YOUR_TOKEN
-cargo run --manifest-path cli/Cargo.toml -- config anthropic_api_key=YOUR_KEY
-cargo run --manifest-path cli/Cargo.toml -- config openrouter_api_key=YOUR_KEY
-cargo run --manifest-path cli/Cargo.toml -- config openai_api_key=YOUR_KEY
-cargo run --manifest-path cli/Cargo.toml -- config llm_provider=openrouter
-cargo run --manifest-path cli/Cargo.toml -- config model=openai/gpt-4o-mini
-cargo run --manifest-path cli/Cargo.toml -- config langchain_api_key=YOUR_KEY
-cargo run --manifest-path cli/Cargo.toml -- config langchain_project=ghostfolio
+cargo run -- config ghostfolio_url=http://localhost:3333
+cargo run -- config access_token=YOUR_TOKEN
+cargo run -- config anthropic_api_key=YOUR_KEY
+cargo run -- config openrouter_api_key=YOUR_KEY
+cargo run -- config openai_api_key=YOUR_KEY
+cargo run -- config llm_provider=openrouter
+cargo run -- config model=openai/gpt-4o-mini
+cargo run -- config langchain_api_key=YOUR_KEY
+cargo run -- config langchain_project=ghostfolio
 ```
 
 ### `evals`
@@ -102,46 +104,61 @@ cargo run --manifest-path cli/Cargo.toml -- config langchain_project=ghostfolio
 Run suite:
 
 ```bash
-cargo run --manifest-path cli/Cargo.toml -- evals --suite quick
+cargo run -- evals run --suite quick
 ```
 
 List suites:
 
 ```bash
-cargo run --manifest-path cli/Cargo.toml -- evals --list-suites
+cargo run -- evals run --list-suites
 ```
 
 Case override:
 
 ```bash
-cargo run --manifest-path cli/Cargo.toml -- evals --suite quick --case acct-001,mkt-001
+cargo run -- evals run --suite quick --case acct-001,mkt-001
 ```
 
 Model matrix:
 
 ```bash
-cargo run --manifest-path cli/Cargo.toml -- evals --suite quick --models openai/gpt-4o-mini,anthropic/claude-sonnet-4.6
+cargo run -- evals run --suite quick --models openai/gpt-4o-mini,anthropic/claude-sonnet-4.6
 ```
 
 Provider override:
 
 ```bash
-cargo run --manifest-path cli/Cargo.toml -- evals --suite quick --provider openrouter --model openai/gpt-4o-mini
+cargo run -- evals run --suite quick --provider openrouter --model openai/gpt-4o-mini
 ```
 
 Live API mode:
 
 ```bash
-cargo run --manifest-path cli/Cargo.toml -- evals --suite quick --live
+cargo run -- evals run --suite quick --live
 ```
 
 Console mode (disable eval TUI):
 
 ```bash
-cargo run --manifest-path cli/Cargo.toml -- evals --suite quick --no-tui
+cargo run -- evals run --suite quick --no-tui
 ```
 
 Eval corpus definitions and suite files live under [`cli/evals/`](./evals/).
+
+Report latest run (or explicit run ID):
+
+```bash
+cargo run -- evals report
+cargo run -- evals report --run-id rust-run-20260227-123456
+```
+
+Inspect stored run artifacts:
+
+```bash
+cargo run -- evals get cli/evals/results/rust-run-20260227-123456
+cargo run -- evals get cli/evals/results/rust-run-20260227-123456 --case act-001
+cargo run -- evals get cli/evals/results/rust-run-20260227-123456/act-001.json
+```
 
 ## Evals Output Modes
 
@@ -220,16 +237,16 @@ Common env vars:
 Run Rust tests:
 
 ```bash
-cargo test --manifest-path cli/Cargo.toml
+cargo test
 ```
 
 Compile tests only:
 
 ```bash
-cargo test --manifest-path cli/Cargo.toml --no-run
+cargo test --no-run
 ```
 
-`cargo test` vs `ghostfolio evals`:
+`cargo test` vs `ghostfolio evals run`:
 
 - `cargo test`: Rust unit/integration tests for implementation
-- `ghostfolio evals`: scenario-based behavioral grading of agent outputs
+- `ghostfolio evals run`: scenario-based behavioral grading of agent outputs

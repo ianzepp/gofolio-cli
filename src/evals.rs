@@ -32,6 +32,30 @@ pub struct TestArgs {
     pub no_tui: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct ReportArgs {
+    pub evals_root: Option<PathBuf>,
+    pub run_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GetArgs {
+    pub path: PathBuf,
+    pub case_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct StoredEvalResult {
+    model: String,
+    category: String,
+    difficulty: String,
+    pass: bool,
+    error: Option<String>,
+    duration_ms: u64,
+    input_tokens: u64,
+    output_tokens: u64,
+}
+
 #[derive(Debug, Deserialize)]
 struct SuiteConfig {
     description: String,
@@ -479,6 +503,190 @@ fn print_case_trace(run: &AgentCaseRun) {
     );
 }
 
+pub fn report(args: ReportArgs) -> Result<(), String> {
+    let evals_root = resolve_evals_root(args.evals_root)?;
+    let run_dir = resolve_run_dir(&evals_root, args.run_id.as_deref())?;
+    let run_id = run_dir
+        .file_name()
+        .and_then(|v| v.to_str())
+        .unwrap_or("(unknown)");
+    let results = load_run_results(&run_dir)?;
+    if results.is_empty() {
+        return Err(format!(
+            "no case result files found in {}",
+            run_dir.display()
+        ));
+    }
+
+    let total = results.len();
+    let passed = results.iter().filter(|r| r.pass).count();
+    let failed = total - passed;
+    let errors = results.iter().filter(|r| r.error.is_some()).count();
+    let total_input_tokens: u64 = results.iter().map(|r| r.input_tokens).sum();
+    let total_output_tokens: u64 = results.iter().map(|r| r.output_tokens).sum();
+    let total_duration_ms: u64 = results.iter().map(|r| r.duration_ms).sum();
+
+    println!("Run: {run_id}");
+    println!("Path: {}", run_dir.display());
+    println!(
+        "Summary: total={} passed={} failed={} errors={} input_tokens={} output_tokens={} duration_ms={}",
+        total, passed, failed, errors, total_input_tokens, total_output_tokens, total_duration_ms
+    );
+
+    let mut by_model: BTreeMap<&str, (usize, usize, usize)> = BTreeMap::new();
+    let mut by_category: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
+    let mut by_difficulty: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
+    let mut matrix: BTreeMap<&str, BTreeMap<&str, (usize, usize)>> = BTreeMap::new();
+    let mut difficulties: BTreeMap<&str, ()> = BTreeMap::new();
+
+    for result in &results {
+        let model_stats = by_model.entry(result.model.as_str()).or_insert((0, 0, 0));
+        model_stats.0 += 1;
+        if result.pass {
+            model_stats.1 += 1;
+        }
+        if result.error.is_some() {
+            model_stats.2 += 1;
+        }
+
+        let category_stats = by_category.entry(result.category.as_str()).or_insert((0, 0));
+        category_stats.0 += 1;
+        if result.pass {
+            category_stats.1 += 1;
+        }
+
+        let difficulty_stats = by_difficulty
+            .entry(result.difficulty.as_str())
+            .or_insert((0, 0));
+        difficulty_stats.0 += 1;
+        if result.pass {
+            difficulty_stats.1 += 1;
+        }
+
+        difficulties.entry(result.difficulty.as_str()).or_insert(());
+        let category_row = matrix.entry(result.category.as_str()).or_default();
+        let cell = category_row
+            .entry(result.difficulty.as_str())
+            .or_insert((0, 0));
+        cell.0 += 1;
+        if result.pass {
+            cell.1 += 1;
+        }
+    }
+
+    println!("By model:");
+    for (model, (count, model_passed, model_errors)) in by_model {
+        let pass_rate = if count > 0 {
+            (model_passed as f64 / count as f64) * 100.0
+        } else {
+            0.0
+        };
+        println!(
+            "- {} total={} passed={} pass_rate={:.1}% errors={}",
+            model, count, model_passed, pass_rate, model_errors
+        );
+    }
+
+    println!("By category:");
+    for (category, (count, category_passed)) in &by_category {
+        let pass_rate = if *count > 0 {
+            (*category_passed as f64 / *count as f64) * 100.0
+        } else {
+            0.0
+        };
+        println!(
+            "- {} total={} passed={} pass_rate={:.1}%",
+            category, count, category_passed, pass_rate
+        );
+    }
+
+    println!("By difficulty:");
+    for (difficulty, (count, difficulty_passed)) in &by_difficulty {
+        let pass_rate = if *count > 0 {
+            (*difficulty_passed as f64 / *count as f64) * 100.0
+        } else {
+            0.0
+        };
+        println!(
+            "- {} total={} passed={} pass_rate={:.1}%",
+            difficulty, count, difficulty_passed, pass_rate
+        );
+    }
+
+    let difficulty_columns: Vec<&str> = difficulties.keys().copied().collect();
+    println!("Category x Difficulty:");
+    let header = if difficulty_columns.is_empty() {
+        "category".to_string()
+    } else {
+        format!("category | {}", difficulty_columns.join(" | "))
+    };
+    println!("{header}");
+    for (category, row) in matrix {
+        let mut values = Vec::new();
+        for difficulty in &difficulty_columns {
+            let (count, category_passed) = row.get(difficulty).copied().unwrap_or((0, 0));
+            if count == 0 {
+                values.push("-".to_string());
+            } else {
+                values.push(format!("{}/{} ({:.1}%)", category_passed, count, (category_passed as f64 / count as f64) * 100.0));
+            }
+        }
+        if values.is_empty() {
+            println!("{category}");
+        } else {
+            println!("{} | {}", category, values.join(" | "));
+        }
+    }
+
+    Ok(())
+}
+
+pub fn get(args: GetArgs) -> Result<(), String> {
+    let path = args.path;
+    if path.is_file() {
+        let body = read_to_string(&path).map_err(|e| e.to_string())?;
+        println!("{body}");
+        return Ok(());
+    }
+
+    if !path.is_dir() {
+        return Err(format!("path does not exist: {}", path.display()));
+    }
+
+    if let Some(case_id) = args.case_id {
+        let case_path = path.join(format!("{case_id}.json"));
+        if !case_path.is_file() {
+            return Err(format!(
+                "case result not found: {}",
+                case_path.display()
+            ));
+        }
+        let body = read_to_string(&case_path).map_err(|e| e.to_string())?;
+        println!("{body}");
+        return Ok(());
+    }
+
+    let mut files = Vec::new();
+    for entry in read_dir(&path).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let file_path = entry.path();
+        if file_path.extension().and_then(|ext| ext.to_str()) == Some("json")
+            && let Some(stem) = file_path.file_stem().and_then(|s| s.to_str())
+        {
+            files.push(stem.to_string());
+        }
+    }
+    files.sort();
+
+    println!("Run path: {}", path.display());
+    println!("Cases: {}", files.len());
+    for case_id in files {
+        println!("- {case_id}");
+    }
+
+    Ok(())
+}
+
 fn print_model_summary(results: &[EvalResult]) {
     #[derive(Default)]
     struct Summary {
@@ -561,6 +769,50 @@ fn resolve_evals_root(explicit: Option<PathBuf>) -> Result<PathBuf, String> {
         }
     }
     Err("could not locate evals root (pass --evals-root)".to_string())
+}
+
+fn resolve_run_dir(evals_root: &Path, run_id: Option<&str>) -> Result<PathBuf, String> {
+    let results_root = evals_root.join("results");
+    if !results_root.is_dir() {
+        return Err(format!(
+            "results directory not found: {}",
+            results_root.display()
+        ));
+    }
+
+    if let Some(id) = run_id {
+        let run_dir = results_root.join(id);
+        if run_dir.is_dir() {
+            return Ok(run_dir);
+        }
+        return Err(format!("run not found: {}", run_dir.display()));
+    }
+
+    let mut run_dirs: Vec<PathBuf> = read_dir(&results_root)
+        .map_err(|e| e.to_string())?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|path| path.is_dir())
+        .collect();
+    run_dirs.sort();
+    run_dirs
+        .pop()
+        .ok_or_else(|| format!("no runs found under {}", results_root.display()))
+}
+
+fn load_run_results(run_dir: &Path) -> Result<Vec<StoredEvalResult>, String> {
+    let mut results = Vec::new();
+    for entry in read_dir(run_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let body = read_to_string(&path).map_err(|e| e.to_string())?;
+        let result: StoredEvalResult = serde_json::from_str(&body)
+            .map_err(|e| format!("failed to parse {}: {e}", path.display()))?;
+        results.push(result);
+    }
+    Ok(results)
 }
 
 fn load_suites(root: &Path) -> Result<std::collections::HashMap<String, SuiteConfig>, String> {

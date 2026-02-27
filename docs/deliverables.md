@@ -1,7 +1,7 @@
 # Deliverables Checklist
 
 **Deadline:** Sunday Feb 28, 10:59 PM CT
-**Last updated:** Fri Feb 27, 2026 (evidence-based audit)
+**Last updated:** Fri Feb 27, 2026 (evidence-based audit, CLI verification update)
 
 ---
 
@@ -22,7 +22,7 @@
 - [x] 5+ functional tools
 - [x] ReAct loop with multi-step reasoning (`apps/api` uses `maxSteps`, `cli` uses 20 tool rounds)
 - [x] Multi-turn conversation (`apps/api` in-memory session service; CLI conversation state)
-- [ ] Verification layer with 3+ distinct checks (currently one primary heuristic-based verification path)
+- [~] Verification layer with 3+ distinct checks (CLI now has 2 deterministic checks: `claim_to_tool_grounding` + `tool_error_propagation`, plus optional LLM `secondary_review` when `GF_VERIFY_PROVIDER` or `GF_VERIFY_MODEL` is configured)
 - [x] Tool-first system prompt workflow in both surfaces
 
 ## Evaluation Framework (50+ cases)
