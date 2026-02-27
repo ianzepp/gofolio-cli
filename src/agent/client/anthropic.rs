@@ -118,9 +118,13 @@ impl AnthropicClient {
             let last_id = resp.data.last().map(|m| m.id.clone());
 
             for m in resp.data {
+                let (input_cost_per_token, output_cost_per_token) =
+                    anthropic_cost_per_token(&m.id).unwrap_or((None, None));
                 all_models.push(ModelEntry {
                     id: m.id,
                     display_name: m.display_name,
+                    input_cost_per_token,
+                    output_cost_per_token,
                 });
             }
 
@@ -185,11 +189,32 @@ struct ModelInfo {
 fn fallback_models() -> Vec<ModelEntry> {
     FALLBACK_MODELS
         .iter()
-        .map(|(id, name)| ModelEntry {
-            id: id.to_string(),
-            display_name: name.to_string(),
+        .map(|(id, name)| {
+            let (input_cost_per_token, output_cost_per_token) =
+                anthropic_cost_per_token(id).unwrap_or((None, None));
+            ModelEntry {
+                id: id.to_string(),
+                display_name: name.to_string(),
+                input_cost_per_token,
+                output_cost_per_token,
+            }
         })
         .collect()
+}
+
+fn anthropic_cost_per_token(model_id: &str) -> Option<(Option<f64>, Option<f64>)> {
+    // USD cost per token (prompt, completion).
+    let (input, output) = match model_id {
+        "claude-opus-4-6" | "claude-opus-4-5-20251101" => (0.000005, 0.000025),
+        "claude-sonnet-4-6" | "claude-sonnet-4-20250514" | "claude-sonnet-4-5-20250929" => {
+            (0.000003, 0.000015)
+        }
+        "claude-opus-4-1-20250805" | "claude-opus-4-20250514" => (0.000015, 0.000075),
+        "claude-haiku-4-5-20251001" => (0.000001, 0.000005),
+        _ => return None,
+    };
+
+    Some((Some(input), Some(output)))
 }
 
 fn parse_response(json: &str) -> Result<ChatResponse, AgentError> {

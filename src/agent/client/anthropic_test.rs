@@ -1,11 +1,33 @@
-use super::{fallback_models, parse_response};
+use super::{anthropic_cost_per_token, fallback_models, parse_response};
 use crate::agent::types::{AgentError, ContentBlock};
 
 #[test]
 fn fallback_models_contains_expected_entries() {
     let models = fallback_models();
     assert!(!models.is_empty());
-    assert!(models.iter().any(|m| m.id == "claude-sonnet-4-6"));
+    let sonnet = models
+        .iter()
+        .find(|m| m.id == "claude-sonnet-4-6")
+        .expect("expected sonnet fallback model");
+    assert_eq!(sonnet.input_cost_per_token, Some(0.000003));
+    assert_eq!(sonnet.output_cost_per_token, Some(0.000015));
+}
+
+#[test]
+fn anthropic_cost_per_token_maps_known_models() {
+    assert_eq!(
+        anthropic_cost_per_token("claude-opus-4-6"),
+        Some((Some(0.000005), Some(0.000025)))
+    );
+    assert_eq!(
+        anthropic_cost_per_token("claude-sonnet-4-5-20250929"),
+        Some((Some(0.000003), Some(0.000015)))
+    );
+    assert_eq!(
+        anthropic_cost_per_token("claude-haiku-4-5-20251001"),
+        Some((Some(0.000001), Some(0.000005)))
+    );
+    assert_eq!(anthropic_cost_per_token("claude-unknown"), None);
 }
 
 #[test]

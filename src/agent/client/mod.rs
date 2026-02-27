@@ -8,6 +8,10 @@ use crate::agent::types::{AgentError, ChatResponse, Message, Tool};
 pub struct ModelEntry {
     pub id: String,
     pub display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_cost_per_token: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_cost_per_token: Option<f64>,
 }
 
 /// Known LLM providers.

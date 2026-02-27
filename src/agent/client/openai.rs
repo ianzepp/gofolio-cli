@@ -149,10 +149,7 @@ impl OpenAIClient {
         Ok(resp
             .data
             .into_iter()
-            .map(|m| ModelEntry {
-                display_name: m.id.clone(),
-                id: m.id,
-            })
+            .map(model_entry_from_info)
             .collect())
     }
 
@@ -410,6 +407,71 @@ struct OaiModelsResponse {
 #[derive(Deserialize)]
 struct OaiModelInfo {
     id: String,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    pricing: Option<OaiModelPricing>,
+    #[serde(default)]
+    input_cost_per_token: Option<OaiNumberish>,
+    #[serde(default)]
+    output_cost_per_token: Option<OaiNumberish>,
+}
+
+#[derive(Deserialize)]
+struct OaiModelPricing {
+    #[serde(default)]
+    prompt: Option<OaiNumberish>,
+    #[serde(default)]
+    completion: Option<OaiNumberish>,
+    #[serde(default)]
+    input: Option<OaiNumberish>,
+    #[serde(default)]
+    output: Option<OaiNumberish>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(untagged)]
+enum OaiNumberish {
+    Number(f64),
+    String(String),
+}
+
+fn parse_numberish(value: Option<OaiNumberish>) -> Option<f64> {
+    match value {
+        Some(OaiNumberish::Number(v)) => Some(v),
+        Some(OaiNumberish::String(s)) => s.parse::<f64>().ok(),
+        None => None,
+    }
+}
+
+fn model_entry_from_info(info: OaiModelInfo) -> ModelEntry {
+    let from_pricing_in = info
+        .pricing
+        .as_ref()
+        .and_then(|p| p.prompt.as_ref().or(p.input.as_ref()));
+    let from_pricing_out = info
+        .pricing
+        .as_ref()
+        .and_then(|p| p.completion.as_ref().or(p.output.as_ref()));
+
+    let input_cost_per_token = parse_numberish(
+        from_pricing_in
+            .cloned()
+            .or(info.input_cost_per_token),
+    );
+    let output_cost_per_token = parse_numberish(
+        from_pricing_out
+            .cloned()
+            .or(info.output_cost_per_token),
+    );
+
+    let display_name = info.name.unwrap_or_else(|| info.id.clone());
+    ModelEntry {
+        id: info.id,
+        display_name,
+        input_cost_per_token,
+        output_cost_per_token,
+    }
 }
 
 #[cfg(test)]

@@ -501,6 +501,8 @@ impl AppState {
                 vec![ModelEntry {
                     id: client::default_model_for_provider(status.provider).to_string(),
                     display_name: "default".to_string(),
+                    input_cost_per_token: None,
+                    output_cost_per_token: None,
                 }]
             } else {
                 models.to_vec()

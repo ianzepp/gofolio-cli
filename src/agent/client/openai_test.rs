@@ -1,4 +1,4 @@
-use super::{OpenAIClient, translate_tool};
+use super::{OpenAIClient, model_entry_from_info, translate_tool};
 use crate::agent::types::{AgentError, Content, ContentBlock, Message, Tool};
 
 fn client() -> OpenAIClient {
@@ -122,4 +122,39 @@ fn translate_tool_preserves_name_description_and_schema() {
     assert_eq!(value["function"]["name"], "search_assets");
     assert_eq!(value["function"]["description"], "Search for assets");
     assert_eq!(value["function"]["parameters"]["type"], "object");
+}
+
+#[test]
+fn model_entry_from_info_reads_pricing_from_nested_fields() {
+    let info = serde_json::from_value(serde_json::json!({
+        "id": "openai/gpt-4o-mini",
+        "name": "GPT-4o Mini",
+        "pricing": {
+            "prompt": "0.00000015",
+            "completion": "0.0000006"
+        }
+    }))
+    .expect("expected valid model payload");
+
+    let model = model_entry_from_info(info);
+    assert_eq!(model.id, "openai/gpt-4o-mini");
+    assert_eq!(model.display_name, "GPT-4o Mini");
+    assert_eq!(model.input_cost_per_token, Some(0.00000015));
+    assert_eq!(model.output_cost_per_token, Some(0.0000006));
+}
+
+#[test]
+fn model_entry_from_info_reads_pricing_from_top_level_fields() {
+    let info = serde_json::from_value(serde_json::json!({
+        "id": "gpt-4o-mini",
+        "input_cost_per_token": 0.00000015,
+        "output_cost_per_token": "0.0000006"
+    }))
+    .expect("expected valid model payload");
+
+    let model = model_entry_from_info(info);
+    assert_eq!(model.id, "gpt-4o-mini");
+    assert_eq!(model.display_name, "gpt-4o-mini");
+    assert_eq!(model.input_cost_per_token, Some(0.00000015));
+    assert_eq!(model.output_cost_per_token, Some(0.0000006));
 }
