@@ -184,6 +184,21 @@ struct ToolCallRun {
     duration_ms: u64,
 }
 
+#[derive(Debug, Serialize)]
+struct RunSummaryFile {
+    run_id: String,
+    suite: String,
+    total: usize,
+    passed: usize,
+    failed: usize,
+    errors: usize,
+    input_tokens: u64,
+    output_tokens: u64,
+    duration_ms: u64,
+    latency_p50_ms: u64,
+    latency_p95_ms: u64,
+}
+
 pub async fn run(args: TestArgs) -> Result<(), String> {
     let evals_root = resolve_evals_root(args.evals_root)?;
     let suites = load_suites(&evals_root)?;
@@ -389,9 +404,19 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
     let total_input_tokens: u64 = results.iter().map(|r| r.input_tokens).sum();
     let total_output_tokens: u64 = results.iter().map(|r| r.output_tokens).sum();
     let run_duration_ms = run_started.elapsed().as_millis() as u64;
+    let (latency_p50_ms, latency_p95_ms) =
+        compute_latency_percentiles(results.iter().map(|r| r.duration_ms));
     println!(
-        "Summary: total={} passed={} failed={} errors={} input_tokens={} output_tokens={}",
-        total, passed, failed, errors, total_input_tokens, total_output_tokens
+        "Summary: total={} passed={} failed={} errors={} input_tokens={} output_tokens={} duration={} p50={} p95={}",
+        total,
+        passed,
+        failed,
+        errors,
+        total_input_tokens,
+        total_output_tokens,
+        format_seconds(run_duration_ms),
+        format_seconds(latency_p50_ms),
+        format_seconds(latency_p95_ms)
     );
     print_model_summary(&results);
     if targets.len() > 1 {
@@ -399,12 +424,28 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
     }
 
     write_results_jsonl(&evals_root, &run_id, &results)?;
+    write_summary_file(
+        &evals_root,
+        &run_id,
+        &args.suite,
+        total,
+        passed,
+        failed,
+        errors,
+        total_input_tokens,
+        total_output_tokens,
+        run_duration_ms,
+        latency_p50_ms,
+        latency_p95_ms,
+    )?;
     write_results_sqlite(
         &evals_root,
         &run_id,
         &args.suite,
         &model_labels.join(", "),
         run_duration_ms,
+        latency_p50_ms,
+        latency_p95_ms,
         &results,
     )?;
 
@@ -561,18 +602,22 @@ pub fn report(args: ReportArgs) -> Result<(), String> {
     let total_input_tokens: u64 = results.iter().map(|r| r.input_tokens).sum();
     let total_output_tokens: u64 = results.iter().map(|r| r.output_tokens).sum();
     let total_duration_ms: u64 = results.iter().map(|r| r.duration_ms).sum();
+    let (latency_p50_ms, latency_p95_ms) =
+        compute_latency_percentiles(results.iter().map(|r| r.duration_ms));
 
     println!("Run: {run_id}");
     println!("Path: {}", run_dir.display());
     println!(
-        "Summary: total={} passed={} failed={} errors={} input_tokens={} output_tokens={} duration={}",
+        "Summary: total={} passed={} failed={} errors={} input_tokens={} output_tokens={} duration={} p50={} p95={}",
         total,
         passed,
         failed,
         errors,
         total_input_tokens,
         total_output_tokens,
-        format_seconds(total_duration_ms)
+        format_seconds(total_duration_ms),
+        format_seconds(latency_p50_ms),
+        format_seconds(latency_p95_ms)
     );
 
     let mut by_model: BTreeMap<&str, (usize, usize, usize)> = BTreeMap::new();
@@ -1698,9 +1743,22 @@ pub fn replay(args: ReplayArgs) -> Result<(), String> {
     let passed = results.iter().filter(|r| r.pass).count();
     let failed = total - passed;
     let errors = results.iter().filter(|r| r.error.is_some()).count();
+    let total_input_tokens: u64 = results.iter().map(|r| r.input_tokens).sum();
+    let total_output_tokens: u64 = results.iter().map(|r| r.output_tokens).sum();
+    let replay_duration_ms = started.elapsed().as_millis() as u64;
+    let (latency_p50_ms, latency_p95_ms) =
+        compute_latency_percentiles(results.iter().map(|r| r.duration_ms));
     println!(
-        "Replay summary: total={} passed={} failed={} errors={}",
-        total, passed, failed, errors
+        "Replay summary: total={} passed={} failed={} errors={} input_tokens={} output_tokens={} duration={} p50={} p95={}",
+        total,
+        passed,
+        failed,
+        errors,
+        total_input_tokens,
+        total_output_tokens,
+        format_seconds(replay_duration_ms),
+        format_seconds(latency_p50_ms),
+        format_seconds(latency_p95_ms)
     );
     println!(
         "Replay diff: unchanged_pass={} unchanged_fail={} improved={} regressed={}",
@@ -1709,6 +1767,20 @@ pub fn replay(args: ReplayArgs) -> Result<(), String> {
 
     print_model_summary(&results);
     write_results_jsonl(&evals_root, &run_id, &results)?;
+    write_summary_file(
+        &evals_root,
+        &run_id,
+        &format!("replay:{source_run_id}"),
+        total,
+        passed,
+        failed,
+        errors,
+        total_input_tokens,
+        total_output_tokens,
+        replay_duration_ms,
+        latency_p50_ms,
+        latency_p95_ms,
+    )?;
     let models: std::collections::BTreeSet<String> =
         results.iter().map(|r| r.model.clone()).collect();
     write_results_sqlite(
@@ -1716,7 +1788,9 @@ pub fn replay(args: ReplayArgs) -> Result<(), String> {
         &run_id,
         &format!("replay:{source_run_id}"),
         &models.into_iter().collect::<Vec<_>>().join(", "),
-        started.elapsed().as_millis() as u64,
+        replay_duration_ms,
+        latency_p50_ms,
+        latency_p95_ms,
         &results,
     )?;
 
@@ -1748,12 +1822,50 @@ fn write_results_jsonl(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+fn write_summary_file(
+    evals_root: &Path,
+    run_id: &str,
+    suite: &str,
+    total: usize,
+    passed: usize,
+    failed: usize,
+    errors: usize,
+    input_tokens: u64,
+    output_tokens: u64,
+    duration_ms: u64,
+    latency_p50_ms: u64,
+    latency_p95_ms: u64,
+) -> Result<(), String> {
+    let run_dir = evals_root.join("results").join(run_id);
+    create_dir_all(&run_dir).map_err(|e| e.to_string())?;
+    let summary = RunSummaryFile {
+        run_id: run_id.to_string(),
+        suite: suite.to_string(),
+        total,
+        passed,
+        failed,
+        errors,
+        input_tokens,
+        output_tokens,
+        duration_ms,
+        latency_p50_ms,
+        latency_p95_ms,
+    };
+    let path = run_dir.join("summary.json");
+    let body =
+        serde_json::to_string_pretty(&summary).map_err(|e| format!("serialize summary: {e}"))?;
+    std::fs::write(&path, body).map_err(|e| format!("failed to write {}: {e}", path.display()))
+}
+
 fn write_results_sqlite(
     evals_root: &Path,
     run_id: &str,
     suite: &str,
     model: &str,
     duration_ms: u64,
+    latency_p50_ms: u64,
+    latency_p95_ms: u64,
     results: &[EvalResult],
 ) -> Result<(), String> {
     let results_dir = evals_root.join("results");
@@ -1778,6 +1890,8 @@ CREATE TABLE IF NOT EXISTS runs (
   failed      INTEGER NOT NULL,
   errors      INTEGER NOT NULL,
   duration_ms INTEGER NOT NULL,
+  latency_p50_ms INTEGER NOT NULL DEFAULT 0,
+  latency_p95_ms INTEGER NOT NULL DEFAULT 0,
   tokens_in   INTEGER NOT NULL,
   tokens_out  INTEGER NOT NULL,
   timestamp   TEXT NOT NULL
@@ -1818,6 +1932,8 @@ CREATE TABLE IF NOT EXISTS steps (
 "#,
     )
     .map_err(|e| format!("failed to init sqlite schema: {e}"))?;
+    ensure_runs_column(&conn, "latency_p50_ms", "INTEGER NOT NULL DEFAULT 0")?;
+    ensure_runs_column(&conn, "latency_p95_ms", "INTEGER NOT NULL DEFAULT 0")?;
 
     let total = results.len() as i64;
     let passed = results.iter().filter(|r| r.pass).count() as i64;
@@ -1828,8 +1944,8 @@ CREATE TABLE IF NOT EXISTS steps (
     let timestamp = Utc::now().to_rfc3339();
 
     conn.execute(
-        "INSERT INTO runs (run_id, suite, model_id, model_label, total, passed, failed, errors, duration_ms, tokens_in, tokens_out, timestamp)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO runs (run_id, suite, model_id, model_label, total, passed, failed, errors, duration_ms, latency_p50_ms, latency_p95_ms, tokens_in, tokens_out, timestamp)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             run_id,
             suite,
@@ -1840,6 +1956,8 @@ CREATE TABLE IF NOT EXISTS steps (
             failed,
             errors,
             duration_ms as i64,
+            latency_p50_ms as i64,
+            latency_p95_ms as i64,
             tokens_in,
             tokens_out,
             timestamp
@@ -1898,6 +2016,31 @@ CREATE TABLE IF NOT EXISTS steps (
     Ok(())
 }
 
+fn ensure_runs_column(conn: &Connection, column: &str, spec: &str) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(runs)")
+        .map_err(|e| format!("failed to inspect runs schema: {e}"))?;
+    let mut rows = stmt
+        .query([])
+        .map_err(|e| format!("failed to query runs schema: {e}"))?;
+    let mut present = false;
+    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        let name: String = row.get(1).map_err(|e| e.to_string())?;
+        if name == column {
+            present = true;
+            break;
+        }
+    }
+    if !present {
+        conn.execute(
+            &format!("ALTER TABLE runs ADD COLUMN {column} {spec}"),
+            [],
+        )
+        .map_err(|e| format!("failed to migrate runs.{column}: {e}"))?;
+    }
+    Ok(())
+}
+
 /// Resolve the adapter for a given provider (mirrors Config logic).
 fn provider_adapter(provider: Provider, cfg: &Config) -> Adapter {
     match provider {
@@ -1916,6 +2059,25 @@ fn provider_adapter(provider: Provider, cfg: &Config) -> Adapter {
                 .unwrap_or(Adapter::OpenAIChatCompletions)
         }
     }
+}
+
+fn compute_latency_percentiles<I>(durations_ms: I) -> (u64, u64)
+where
+    I: IntoIterator<Item = u64>,
+{
+    let mut samples: Vec<u64> = durations_ms.into_iter().filter(|ms| *ms > 0).collect();
+    if samples.is_empty() {
+        return (0, 0);
+    }
+    samples.sort_unstable();
+    let p50 = samples[percentile_index(samples.len(), 50)];
+    let p95 = samples[percentile_index(samples.len(), 95)];
+    (p50, p95)
+}
+
+fn percentile_index(len: usize, percentile: usize) -> usize {
+    let rank = (len * percentile).div_ceil(100);
+    rank.saturating_sub(1).min(len.saturating_sub(1))
 }
 
 #[cfg(test)]
