@@ -63,7 +63,7 @@ cargo run --manifest-path cli/Cargo.toml -- evals --suite quick --live --model o
 
 ## Outputs
 
-- NDJSON files: `evals/results/rust-run-*.jsonl`
+- Per-case JSON files: `evals/results/<run-id>/<case-id>.json`
 - SQLite DB: `evals/results/results.db`
 
 ## Notes
