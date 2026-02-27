@@ -5,7 +5,7 @@ use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 use crate::agent::client::Provider;
 
 /// Maximum concurrent leases per API key.
-const MAX_LEASES_PER_KEY: usize = 6;
+const MAX_LEASES_PER_KEY: usize = 4;
 
 /// A pool of API keys for a single provider.
 /// Max concurrency = number of keys × MAX_LEASES_PER_KEY.
