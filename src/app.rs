@@ -676,14 +676,16 @@ impl AppState {
         self.push_warning("Request canceled.");
     }
 
-    pub fn latency_average_max_ms(&self) -> Option<(u64, u64)> {
+    pub fn latency_percentiles_ms(&self) -> Option<(u64, u64)> {
         if self.latency_samples_ms.is_empty() {
             return None;
         }
-        let total: u128 = self.latency_samples_ms.iter().map(|v| *v as u128).sum();
-        let avg = (total / self.latency_samples_ms.len() as u128) as u64;
-        let max = *self.latency_samples_ms.iter().max().unwrap_or(&0);
-        Some((avg, max))
+        let mut samples = self.latency_samples_ms.clone();
+        samples.sort_unstable();
+
+        let p50_index = percentile_index(samples.len(), 50);
+        let p95_index = percentile_index(samples.len(), 95);
+        Some((samples[p50_index], samples[p95_index]))
     }
 
     fn record_latency_sample(&mut self, latency_ms: u64) {
@@ -698,6 +700,12 @@ impl AppState {
             self.latency_samples_ms.drain(0..overflow);
         }
     }
+}
+
+fn percentile_index(len: usize, percentile: usize) -> usize {
+    // Nearest-rank index (0-based), clamped for safety.
+    let rank = (len * percentile).div_ceil(100);
+    rank.saturating_sub(1).min(len.saturating_sub(1))
 }
 
 fn build_llm_clients(providers: &[ProviderConfig]) -> Vec<(Provider, LlmClient)> {
