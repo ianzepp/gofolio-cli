@@ -283,6 +283,19 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
                 langsmith.as_ref(),
             )
             .await?;
+            for r in &model_results {
+                let status = if r.pass { "PASS" } else { "FAIL" };
+                let tools = r.tools_called.join(", ");
+                println!("[{status}] {} — {}", r.case_id, r.description);
+                if !r.pass {
+                    if !r.detail_a.is_empty() { println!("  tools:    {}", r.detail_a); }
+                    if !r.detail_b.is_empty() { println!("  content:  {}", r.detail_b); }
+                    if !r.detail_c.is_empty() { println!("  verified: {}", r.detail_c); }
+                    if !tools.is_empty()       { println!("  called:   {tools}"); }
+                    if let Some(ref err) = r.error { println!("  error:    {err}"); }
+                    println!("  response: {}", r.response);
+                }
+            }
             results.append(&mut model_results);
         }
     }
