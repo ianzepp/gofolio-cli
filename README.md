@@ -218,6 +218,10 @@ Secondary verifier (optional):
 - `GF_VERIFY_MODEL` (model ID)
 - When enabled, it runs only for risky/low-confidence responses
 
+Tool payload formatting:
+
+- `list_activities` results are converted to TOON tabular format (CSV-like header + rows) before being sent to the LLM, to improve context efficiency.
+
 ## Config and Cache Paths
 
 - Config file: `~/.config/ghostfolio-cli/config.toml`
