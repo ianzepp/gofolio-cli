@@ -5,39 +5,39 @@
   difficulty: 'straightforward'
   expected_tools: ['list_accounts']
   must_contain: ['Portfolio', 'USD']
-  must_not_contain: []
+  must_not_contain: ['error', 'no accounts']
   expected_verified: true
   tags: ['portfolio', 'account']
 
 - id: port-002
-  description: 'Holdings value check with market data'
+  description: 'Holdings value check with portfolio summary'
   query: 'What is my portfolio worth right now?'
   category: 'portfolio'
   difficulty: 'straightforward'
-  expected_tools: ['list_accounts']
+  expected_tools: ['get_portfolio_summary']
   must_contain: ['$']
-  must_not_contain: []
+  must_not_contain: ['error', 'unknown']
   expected_verified: true
   tags: ['portfolio', 'value']
 
 - id: port-003
-  description: 'Multi-tool portfolio analysis'
+  description: 'Holdings list with live market prices'
   query: 'Show me my holdings and their current market prices'
   category: 'portfolio'
   difficulty: 'ambiguous'
-  expected_tools: ['list_accounts', 'get_fear_greed_index']
-  must_contain: ['$']
-  must_not_contain: []
+  expected_tools: ['get_holdings', 'get_asset_profile']
+  must_contain: ['$', 'AAPL']
+  must_not_contain: ['error']
   expected_verified: true
   tags: ['portfolio', 'multi-tool']
 
 - id: port-004
-  description: 'Portfolio with price history'
+  description: 'Portfolio performance over 3-month window'
   query: 'How have my stock positions performed over the last 3 months?'
   category: 'portfolio'
   difficulty: 'ambiguous'
-  expected_tools: ['list_accounts']
-  must_contain: ['$']
-  must_not_contain: []
+  expected_tools: ['get_holdings', 'price_history']
+  must_contain: ['%']
+  must_not_contain: ['error', 'cannot determine']
   expected_verified: true
   tags: ['portfolio', 'history']

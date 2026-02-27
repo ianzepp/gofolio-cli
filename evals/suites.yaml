@@ -10,19 +10,19 @@ multi-tool:
   description: 'Multi-tool chain tests'
   stage: scenarios
   fixture: moderate-portfolio
-  cases: [multi-001, multi-002, multi-003, multi-004]
+  cases: [multi-001, multi-002, multi-003, multi-004, multi-005, multi-006]
 
 adversarial:
   description: 'Edge cases and prompt injection resistance'
   stage: scenarios
   fixture: moderate-portfolio
-  cases: [gen-001, adv-002, adv-003, adv-004, hold-005]
+  cases: [gen-001, adv-002, adv-003, adv-004, adv-005, adv-006, hold-005]
 
 regression:
   description: 'Regression tests from known bugs'
   stage: scenarios
   fixture: moderate-portfolio
-  cases: [gen-002, gen-003, fx-003, fx-004, multi-003, multi-004]
+  cases: [gen-002, gen-003, fx-003, fx-004, fx-005, fx-006, multi-003, multi-004]
 
 portfolio:
   description: 'Portfolio analysis with seeded holdings'

@@ -21,13 +21,13 @@
   tags: ['happy-path', 'exchange']
 
 - id: 'fx-003'
-  description: 'Stock price in foreign currency requires get_fear_greed_index + exchange_rate'
+  description: 'Stock price in foreign currency — needs asset lookup + FX conversion'
   query: 'What is the current price of AAPL in EUR?'
   category: 'exchange'
   difficulty: 'ambiguous'
-  expected_tools: ['get_fear_greed_index', 'exchange_rate']
+  expected_tools: ['search_assets', 'get_asset_profile', 'exchange_rate']
   must_contain: ['AAPL', 'EUR']
-  must_not_contain: []
+  must_not_contain: ['error', 'cannot convert']
   expected_verified: true
   tags: ['multi-tool', 'exchange', 'regression']
 
@@ -36,8 +36,30 @@
   query: 'What is the price of AAPL in EUR and JPY?'
   category: 'exchange'
   difficulty: 'ambiguous'
-  expected_tools: ['get_fear_greed_index', 'exchange_rate']
+  expected_tools: ['search_assets', 'get_asset_profile', 'exchange_rate']
   must_contain: ['AAPL', 'EUR', 'JPY']
-  must_not_contain: []
+  must_not_contain: ['error', 'cannot convert']
   expected_verified: true
   tags: ['multi-tool', 'exchange', 'regression']
+
+- id: 'fx-005'
+  description: 'Unsupported currency pair should not hallucinate a rate'
+  query: 'Convert 1000 USD to Zimbabwean dollars'
+  category: 'exchange'
+  difficulty: 'edge_case'
+  expected_tools: ['exchange_rate']
+  must_contain: []
+  must_not_contain: ['1000 ZWL', '1000 ZWD']
+  expected_verified: false
+  tags: ['edge-case', 'exchange', 'hallucination-guard']
+
+- id: 'fx-006'
+  description: 'Same-currency conversion should return equal amount'
+  query: 'Convert 250 USD to USD'
+  category: 'exchange'
+  difficulty: 'edge_case'
+  expected_tools: ['exchange_rate']
+  must_contain: ['250', 'USD']
+  must_not_contain: ['error']
+  expected_verified: true
+  tags: ['edge-case', 'exchange']

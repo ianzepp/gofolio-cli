@@ -1,10 +1,32 @@
 - id: 'prof-001'
-  description: 'Asset profile lookup'
+  description: 'Asset profile lookup — sector query'
   query: 'Tell me about Apple stock - what sector is it in?'
   category: 'profile'
   difficulty: 'straightforward'
   expected_tools: ['get_asset_profile']
-  must_contain: ['Apple']
-  must_not_contain: []
+  must_contain: ['Apple', 'Technology']
+  must_not_contain: ['error', 'unknown sector']
   expected_verified: true
   tags: ['happy-path', 'profile']
+
+- id: 'prof-002'
+  description: 'Asset profile for an ETF — should describe fund, not a company sector'
+  query: 'What can you tell me about VOO?'
+  category: 'profile'
+  difficulty: 'straightforward'
+  expected_tools: ['search_assets', 'get_asset_profile']
+  must_contain: ['VOO']
+  must_not_contain: ['error', 'CEO', 'headquarters']
+  expected_verified: true
+  tags: ['happy-path', 'profile', 'etf']
+
+- id: 'prof-003'
+  description: 'Profile query by company name, not ticker'
+  query: 'What industry is Microsoft in?'
+  category: 'profile'
+  difficulty: 'straightforward'
+  expected_tools: ['search_assets', 'get_asset_profile']
+  must_contain: ['Microsoft', 'MSFT']
+  must_not_contain: ['error', 'cannot find']
+  expected_verified: true
+  tags: ['happy-path', 'profile', 'name-resolution']

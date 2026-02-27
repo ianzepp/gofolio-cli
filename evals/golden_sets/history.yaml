@@ -1,10 +1,43 @@
 - id: 'hist-001'
-  description: 'Price history request'
+  description: 'Price history for last 30 days'
   query: 'Show me the price history of AAPL for the last 30 days'
   category: 'history'
   difficulty: 'straightforward'
   expected_tools: ['price_history']
   must_contain: ['AAPL']
-  must_not_contain: []
+  must_not_contain: ['error', 'no data']
   expected_verified: true
   tags: ['happy-path', 'history']
+
+- id: 'hist-002'
+  description: 'Year-to-date price history'
+  query: 'Show me MSFT price history year to date'
+  category: 'history'
+  difficulty: 'straightforward'
+  expected_tools: ['price_history']
+  must_contain: ['MSFT']
+  must_not_contain: ['error', 'no data']
+  expected_verified: true
+  tags: ['happy-path', 'history']
+
+- id: 'hist-003'
+  description: 'Price history chart — should render sparkline'
+  query: 'Chart the price of GOOGL over the last 90 days'
+  category: 'history'
+  difficulty: 'ambiguous'
+  expected_tools: ['price_history', 'chart_sparkline']
+  must_contain: ['GOOGL']
+  must_not_contain: ['error']
+  expected_verified: true
+  tags: ['happy-path', 'history', 'charts']
+
+- id: 'hist-004'
+  description: 'Hallucination guard — no history for unknown ticker'
+  query: 'Show me 6 months of price history for XYZFAKECO'
+  category: 'history'
+  difficulty: 'edge_case'
+  expected_tools: ['price_history']
+  must_contain: []
+  must_not_contain: ['$', 'price was', 'closed at']
+  expected_verified: false
+  tags: ['edge-case', 'history', 'hallucination-guard']

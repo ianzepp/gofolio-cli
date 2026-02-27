@@ -1,21 +1,91 @@
+# Market data golden set
+# Tools available for price lookups: search_assets, get_asset_profile, price_history
+# get_fear_greed_index is a sentiment tool — NOT a price lookup tool
+
 - id: 'mkt-001'
-  description: 'Stock price query'
+  description: 'Stock price query by ticker'
   query: 'What is the current price of AAPL?'
   category: 'market_data'
   difficulty: 'straightforward'
   expected_tools: ['search_assets', 'get_asset_profile']
   must_contain: ['AAPL']
-  must_not_contain: []
+  must_not_contain: ['error', 'unknown', 'cannot']
   expected_verified: true
   tags: ['happy-path', 'market']
 
 - id: 'mkt-002'
-  description: 'Multiple stock quotes'
+  description: 'Multiple stock quotes in one query'
   query: 'Get me quotes for MSFT and GOOGL'
   category: 'market_data'
   difficulty: 'straightforward'
   expected_tools: ['search_assets', 'get_asset_profile']
   must_contain: ['MSFT', 'GOOGL']
-  must_not_contain: []
+  must_not_contain: ['error', 'unknown']
   expected_verified: true
   tags: ['happy-path', 'market']
+
+- id: 'mkt-003'
+  description: 'Price query by company name, not ticker'
+  query: 'What is the current price of Amazon stock?'
+  category: 'market_data'
+  difficulty: 'straightforward'
+  expected_tools: ['search_assets', 'get_asset_profile']
+  must_contain: ['AMZN']
+  must_not_contain: ['error', 'cannot find']
+  expected_verified: true
+  tags: ['happy-path', 'market', 'name-resolution']
+
+- id: 'mkt-004'
+  description: 'ETF price query'
+  query: 'What is the price of the S&P 500 ETF VOO?'
+  category: 'market_data'
+  difficulty: 'straightforward'
+  expected_tools: ['search_assets', 'get_asset_profile']
+  must_contain: ['VOO']
+  must_not_contain: ['error', 'stock', 'equity']
+  expected_verified: true
+  tags: ['happy-path', 'market', 'etf']
+
+- id: 'mkt-005'
+  description: 'Hallucination guard — unknown ticker should not make up a price'
+  query: 'What is the current price of XYZFAKECO?'
+  category: 'market_data'
+  difficulty: 'edge_case'
+  expected_tools: ['search_assets']
+  must_contain: []
+  must_not_contain: ['$', 'price is', 'currently trading']
+  expected_verified: false
+  tags: ['edge-case', 'market', 'hallucination-guard']
+
+- id: 'mkt-006'
+  description: 'Crypto price query'
+  query: 'What is the price of Bitcoin?'
+  category: 'market_data'
+  difficulty: 'straightforward'
+  expected_tools: ['search_assets', 'get_asset_profile']
+  must_contain: ['Bitcoin']
+  must_not_contain: ['error']
+  expected_verified: true
+  tags: ['happy-path', 'market', 'crypto']
+
+- id: 'mkt-007'
+  description: 'Fear and greed index — sentiment, not price'
+  query: 'What is the current market fear and greed index?'
+  category: 'market_data'
+  difficulty: 'straightforward'
+  expected_tools: ['get_fear_greed_index']
+  must_contain: []
+  must_not_contain: ['price', 'USD', '$']
+  expected_verified: true
+  tags: ['happy-path', 'market', 'sentiment']
+
+- id: 'mkt-008'
+  description: 'Market sentiment combined with specific stock price'
+  query: 'What is the current market sentiment and the price of AAPL?'
+  category: 'market_data'
+  difficulty: 'ambiguous'
+  expected_tools: ['get_fear_greed_index', 'search_assets', 'get_asset_profile']
+  must_contain: ['AAPL']
+  must_not_contain: ['error']
+  expected_verified: true
+  tags: ['multi-tool', 'market', 'sentiment']

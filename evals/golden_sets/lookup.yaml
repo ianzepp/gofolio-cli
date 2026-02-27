@@ -5,17 +5,39 @@
   difficulty: 'straightforward'
   expected_tools: ['search_assets']
   must_contain: ['TSLA']
-  must_not_contain: []
+  must_not_contain: ['error', 'not found', 'cannot find']
   expected_verified: true
   tags: ['happy-path', 'lookup']
 
 - id: 'sym-002'
-  description: 'Search for an ETF'
+  description: 'Search for an ETF by name'
   query: 'Find the symbol for Vanguard S&P 500 ETF'
   category: 'lookup'
   difficulty: 'straightforward'
   expected_tools: ['search_assets']
   must_contain: ['VOO']
-  must_not_contain: []
+  must_not_contain: ['error', 'not found']
   expected_verified: true
   tags: ['happy-path', 'lookup']
+
+- id: 'sym-003'
+  description: 'Ambiguous company name — should search and clarify'
+  query: 'What is the ticker for Apple?'
+  category: 'lookup'
+  difficulty: 'straightforward'
+  expected_tools: ['search_assets']
+  must_contain: ['AAPL']
+  must_not_contain: ['error', 'APLE']
+  expected_verified: true
+  tags: ['happy-path', 'lookup', 'disambiguation']
+
+- id: 'sym-004'
+  description: 'Lookup for a non-existent company should not hallucinate a ticker'
+  query: 'What is the ticker for FakeCorp Industries?'
+  category: 'lookup'
+  difficulty: 'edge_case'
+  expected_tools: ['search_assets']
+  must_contain: []
+  must_not_contain: ['FAKE', 'FKCP', 'FCI']
+  expected_verified: false
+  tags: ['edge-case', 'lookup', 'hallucination-guard']
