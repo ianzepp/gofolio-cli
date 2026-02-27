@@ -913,16 +913,28 @@ async fn run_case_with_progress(
         content: crate::agent::types::Content::Text(eval_case.query.clone()),
     }];
     let started = Instant::now();
+    let (agent_tx, mut agent_rx) = mpsc::unbounded_channel::<crate::agent::AgentEvent>();
+    let tool_tx_forward = tool_tx.clone();
+    let tool_forwarder = tokio::spawn(async move {
+        while let Some(event) = agent_rx.recv().await {
+            if let crate::agent::AgentEvent::ToolCall(tc) = event {
+                let _ = tool_tx_forward.send((tc.name, tc.success));
+            }
+        }
+    });
+
     let result = agent::run_with_dispatcher(
         llm_client,
         model,
         messages,
         dispatcher,
         langsmith,
-        Some(tool_tx),
+        Some(&agent_tx),
     )
     .await
     .map_err(|e| e.to_string())?;
+    drop(agent_tx);
+    let _ = tool_forwarder.await;
 
     let steps = result
         .steps

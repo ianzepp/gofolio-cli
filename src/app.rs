@@ -89,7 +89,9 @@ pub struct AppState {
     api_client: Option<GhostfolioClient>,
     history: Vec<Message>,
     agent_rx: Option<mpsc::UnboundedReceiver<AgentEvent>>,
+    agent_task: Option<tokio::task::JoinHandle<()>>,
     request_start: Option<Instant>,
+    cancel_esc_at: Option<Instant>,
     warmup_rx: Option<tokio::sync::oneshot::Receiver<warmup::WarmupData>>,
     market_rx: Option<mpsc::UnboundedReceiver<Vec<MarketQuote>>>,
     langsmith: Option<LangSmithConfig>,
@@ -178,7 +180,9 @@ impl AppState {
             api_client: None,
             history: Vec::new(),
             agent_rx: None,
+            agent_task: None,
             request_start: None,
+            cancel_esc_at: None,
             warmup_rx: None,
             market_rx: None,
             langsmith,
@@ -223,6 +227,11 @@ impl AppState {
         self.confidence_score = 0.0;
         self.feedback = None;
         self.loading = false;
+        if let Some(handle) = self.agent_task.take() {
+            handle.abort();
+        }
+        self.agent_rx = None;
+        self.cancel_esc_at = None;
         self.push_system("Session cleared. Type a message to begin.");
     }
 
@@ -299,6 +308,7 @@ impl AppState {
         self.scroll_offset = 0;
         self.loading = true;
         self.request_start = Some(Instant::now());
+        self.cancel_esc_at = None;
 
         // Check prerequisites
         let Some(ref api_client) = self.api_client else {
@@ -322,15 +332,14 @@ impl AppState {
         // Spawn agent task
         let (tx, rx) = mpsc::unbounded_channel();
         self.agent_rx = Some(rx);
-
-        agent::spawn_agent(
+        self.agent_task = Some(agent::spawn_agent(
             api_client.clone(),
             llm_client,
             self.model.clone(),
             self.history.clone(),
             self.langsmith.clone(),
             tx,
-        );
+        ));
     }
 
     fn handle_agent_event(&mut self, event: AgentEvent) {
@@ -363,6 +372,9 @@ impl AppState {
                 confidence_score,
             } => {
                 self.loading = false;
+                self.agent_task = None;
+                self.agent_rx = None;
+                self.cancel_esc_at = None;
                 self.scroll_offset = 0;
                 self.turn_count += 1;
                 self.total_input_tokens += input_tokens;
@@ -405,6 +417,9 @@ impl AppState {
             }
             AgentEvent::Error(err) => {
                 self.loading = false;
+                self.agent_task = None;
+                self.agent_rx = None;
+                self.cancel_esc_at = None;
                 self.latency_ms = self
                     .request_start
                     .map(|s| s.elapsed().as_millis() as u64)
@@ -614,6 +629,23 @@ impl AppState {
                 }
             }
         }
+    }
+
+    fn cancel_active_request(&mut self) {
+        if !self.loading {
+            return;
+        }
+        if let Some(handle) = self.agent_task.take() {
+            handle.abort();
+        }
+        self.agent_rx = None;
+        self.loading = false;
+        self.cancel_esc_at = None;
+        self.latency_ms = self
+            .request_start
+            .map(|s| s.elapsed().as_millis() as u64)
+            .unwrap_or(0);
+        self.push_warning("Request canceled.");
     }
 }
 
@@ -855,31 +887,58 @@ async fn run_loop(terminal: &mut DefaultTerminal) -> io::Result<()> {
 
                     // Normal input
                     match key.code {
+                        KeyCode::Esc => {
+                            if state.loading {
+                                let now = Instant::now();
+                                let should_cancel = state
+                                    .cancel_esc_at
+                                    .map(|t| now.duration_since(t).as_millis() <= 900)
+                                    .unwrap_or(false);
+                                if should_cancel {
+                                    state.cancel_active_request();
+                                } else {
+                                    state.cancel_esc_at = Some(now);
+                                    state.push_system("Press Esc again quickly to cancel request.");
+                                }
+                            }
+                        }
                         KeyCode::Enter => state.submit_message(),
                         KeyCode::Backspace => {
                             state.input.pop();
+                            state.cancel_esc_at = None;
                         }
                         KeyCode::PageUp => {
                             state.scroll_offset = state.scroll_offset.saturating_add(10);
+                            state.cancel_esc_at = None;
                         }
                         KeyCode::PageDown => {
                             state.scroll_offset = state.scroll_offset.saturating_sub(10);
+                            state.cancel_esc_at = None;
                         }
                         KeyCode::Home => {
                             // Scroll to top — use a large value; render will clamp
                             state.scroll_offset = u16::MAX;
+                            state.cancel_esc_at = None;
                         }
                         KeyCode::End => {
                             state.scroll_offset = 0;
+                            state.cancel_esc_at = None;
                         }
                         KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
                             state.scroll_offset = state.scroll_offset.saturating_add(1);
+                            state.cancel_esc_at = None;
                         }
                         KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
                             state.scroll_offset = state.scroll_offset.saturating_sub(1);
+                            state.cancel_esc_at = None;
                         }
-                        KeyCode::Char(c) => state.input.push(c),
-                        _ => {}
+                        KeyCode::Char(c) => {
+                            state.input.push(c);
+                            state.cancel_esc_at = None;
+                        }
+                        _ => {
+                            state.cancel_esc_at = None;
+                        }
                     }
                 }
             }

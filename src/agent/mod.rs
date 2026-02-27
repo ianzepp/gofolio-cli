@@ -49,7 +49,7 @@ pub fn spawn_agent(
     history: Vec<Message>,
     langsmith: Option<LangSmithConfig>,
     tx: mpsc::UnboundedSender<AgentEvent>,
-) {
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let dispatcher = ToolDispatcher::Live(api_client);
         match run_with_dispatcher(
@@ -58,14 +58,11 @@ pub fn spawn_agent(
             history,
             &dispatcher,
             langsmith.as_ref(),
-            None,
+            Some(&tx),
         )
         .await
         {
             Ok(result) => {
-                for call in result.tool_calls {
-                    let _ = tx.send(AgentEvent::ToolCall(call));
-                }
                 for chart in result.chart_data {
                     let _ = tx.send(AgentEvent::ChartData(chart));
                 }
@@ -84,7 +81,7 @@ pub fn spawn_agent(
                 let _ = tx.send(AgentEvent::Error(e.to_string()));
             }
         }
-    });
+    })
 }
 
 pub async fn run_with_dispatcher(
@@ -93,7 +90,7 @@ pub async fn run_with_dispatcher(
     mut messages: Vec<Message>,
     dispatcher: &ToolDispatcher,
     langsmith: Option<&LangSmithConfig>,
-    tool_progress: Option<&mpsc::UnboundedSender<(String, bool)>>,
+    event_tx: Option<&mpsc::UnboundedSender<AgentEvent>>,
 ) -> Result<AgentRunResult, AgentError> {
     let tools = tools::all_tools();
 
@@ -243,8 +240,8 @@ pub async fn run_with_dispatcher(
                     success: !is_error,
                     http_status,
                 };
-                if let Some(tx) = tool_progress {
-                    let _ = tx.send((name.clone(), !is_error));
+                if let Some(tx) = event_tx {
+                    let _ = tx.send(AgentEvent::ToolCall(record.clone()));
                 }
 
                 step_tool_calls.push(record.clone());
