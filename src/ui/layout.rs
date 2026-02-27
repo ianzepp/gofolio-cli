@@ -21,10 +21,11 @@ pub fn render(frame: &mut Frame, state: &AppState) {
         .split(area);
 
     status::render(frame, vertical[0]);
+    let title = state.header_title();
     status::render_header(
         frame,
         vertical[1],
-        "GHOSTFOLIO AGENT",
+        &title,
         &state.llm_keys_header,
     );
 

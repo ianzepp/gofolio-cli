@@ -98,6 +98,13 @@ pub struct AppState {
 }
 
 impl AppState {
+    pub fn header_title(&self) -> String {
+        format!(
+            "GHOSTFOLIO AGENT [{}]",
+            host_port_from_url(&self.config.ghostfolio_url())
+        )
+    }
+
     pub fn estimated_total_cost_usd(&self) -> Option<f64> {
         let provider = self.active_provider?;
         let model = self
@@ -679,6 +686,24 @@ fn build_llm_clients(providers: &[ProviderConfig]) -> Vec<(Provider, LlmClient)>
         }
     }
     clients
+}
+
+fn host_port_from_url(url: &str) -> String {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return "unknown".to_string();
+    }
+    let without_scheme = trimmed.split("://").nth(1).unwrap_or(trimmed);
+    let host_port = without_scheme
+        .split('/')
+        .next()
+        .unwrap_or(without_scheme)
+        .trim();
+    if host_port.is_empty() {
+        "unknown".to_string()
+    } else {
+        host_port.to_string()
+    }
 }
 
 pub async fn run() -> io::Result<()> {
