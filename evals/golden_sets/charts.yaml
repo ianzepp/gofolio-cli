@@ -4,8 +4,9 @@
   category: 'charts'
   difficulty: 'straightforward'
   expected_tools: ['get_performance', 'chart_sparkline']
-  must_contain: ['performance']
-  must_not_contain: []
+  must_contain: []
+  must_contain_any: ['performance', 'portfolio', '%']
+  must_not_contain: ['error']
   expected_verified: true
   tags: ['happy-path', 'charts', 'sparkline']
 
@@ -15,7 +16,8 @@
   category: 'charts'
   difficulty: 'straightforward'
   expected_tools: ['get_holdings', 'chart_bar']
-  must_contain: ['chart']
-  must_not_contain: []
+  must_contain: ['USD']
+  must_contain_any: ['AAPL', 'Apple', 'MSFT', 'Microsoft']
+  must_not_contain: ['error']
   expected_verified: true
   tags: ['happy-path', 'charts', 'bar']
