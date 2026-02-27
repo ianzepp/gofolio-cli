@@ -56,5 +56,20 @@
     "marketPrice": 244.2,
     "dataSource": "YAHOO",
     "symbol": "TSLA"
+  },
+  "YAHOO:NVDA": {
+    "currency": "USD",
+    "historicalData": [
+      { "date": "2025-10-01T00:00:00.000Z", "value": 118.40 },
+      { "date": "2025-10-15T00:00:00.000Z", "value": 124.80 },
+      { "date": "2025-11-01T00:00:00.000Z", "value": 131.20 },
+      { "date": "2025-11-15T00:00:00.000Z", "value": 138.60 },
+      { "date": "2025-12-01T00:00:00.000Z", "value": 133.90 },
+      { "date": "2025-12-15T00:00:00.000Z", "value": 129.50 },
+      { "date": "2025-12-29T00:00:00.000Z", "value": 134.70 }
+    ],
+    "marketPrice": 134.70,
+    "dataSource": "YAHOO",
+    "symbol": "NVDA"
   }
 }

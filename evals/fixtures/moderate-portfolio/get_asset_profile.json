@@ -16,5 +16,32 @@
       "dataSource": "YAHOO",
       "assetClass": "EQUITY"
     }
+  },
+  "YAHOO:NVDA": {
+    "assetProfile": {
+      "symbol": "NVDA",
+      "name": "NVIDIA Corporation",
+      "currency": "USD",
+      "dataSource": "YAHOO",
+      "assetClass": "EQUITY"
+    }
+  },
+  "YAHOO:MSFT": {
+    "assetProfile": {
+      "symbol": "MSFT",
+      "name": "Microsoft Corporation",
+      "currency": "USD",
+      "dataSource": "YAHOO",
+      "assetClass": "EQUITY"
+    }
+  },
+  "YAHOO:GOOGL": {
+    "assetProfile": {
+      "symbol": "GOOGL",
+      "name": "Alphabet Inc.",
+      "currency": "USD",
+      "dataSource": "YAHOO",
+      "assetClass": "EQUITY"
+    }
   }
 }

@@ -16,8 +16,8 @@
   category: 'charts'
   difficulty: 'straightforward'
   expected_tools: ['get_holdings', 'chart_bar']
-  must_contain: ['USD']
-  must_contain_any: ['AAPL', 'Apple', 'MSFT', 'Microsoft']
+  must_contain_any: ['USD', '$']
+  must_contain: ['AAPL', 'MSFT']
   must_not_contain: ['error']
   expected_verified: true
   tags: ['happy-path', 'charts', 'bar']

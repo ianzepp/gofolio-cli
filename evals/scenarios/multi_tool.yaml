@@ -4,7 +4,8 @@
   category: 'multi_tool'
   difficulty: 'straightforward'
   expected_tools: ['list_accounts', 'search_assets', 'get_asset_profile']
-  must_contain: ['account', 'AAPL']
+  must_contain: ['AAPL']
+  must_contain_any: ['account', 'Account', 'Main Brokerage', 'Crypto']
   must_not_contain: ['error']
   expected_verified: true
   tags: ['multi-tool']

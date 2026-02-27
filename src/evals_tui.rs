@@ -513,10 +513,17 @@ fn render_detail_modal(frame: &mut ratatui::Frame, area: Rect, row: &RowState, s
 
     let mut lines: Vec<Line<'static>> = Vec::new();
 
-    // Run ID for referencing this result
+    // Run ID and result file path for referencing this result
     lines.push(Line::from(vec![
-        Span::styled("Run: ", Style::default().fg(theme::MUTED)),
+        Span::styled("Run:  ", Style::default().fg(theme::MUTED)),
         Span::styled(run_id.to_string(), Style::default().fg(theme::WHITE).add_modifier(Modifier::BOLD)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("File: ", Style::default().fg(theme::MUTED)),
+        Span::styled(
+            format!("results/{}/{}.json", run_id, row.case_id),
+            Style::default().fg(theme::WHITE).add_modifier(Modifier::BOLD),
+        ),
     ]));
     lines.push(Line::from(""));
 

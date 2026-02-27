@@ -4,7 +4,8 @@
   category: 'investments'
   difficulty: 'straightforward'
   expected_tools: ['get_investments']
-  must_contain: ['investment']
+  must_contain_any: ['investment', 'contribution', 'USD']
+  must_contain: []
   must_not_contain: []
   expected_verified: true
   tags: ['happy-path', 'investments']

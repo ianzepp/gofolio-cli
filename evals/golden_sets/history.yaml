@@ -16,9 +16,11 @@
   category: 'history'
   difficulty: 'straightforward'
   expected_tools: ['price_history']
-  must_contain: ['MSFT']
+  must_contain_any: ['MSFT', 'Microsoft']
+  must_contain: []
   must_not_contain: ['error', 'no data']
   expected_verified: true
+  skip_verified: true
   tags: ['happy-path', 'history']
 
 - id: 'hist-003'

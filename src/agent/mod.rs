@@ -139,6 +139,23 @@ pub async fn run_with_dispatcher(
 
         if response.stop_reason == "end_turn" || response.stop_reason == "max_tokens" {
             let text = extract_text(&response.content);
+
+            // If the agent ended without any text (e.g. chart-only turn), nudge it
+            // once to produce a summary. Only nudge on end_turn, not max_tokens.
+            if text.trim().is_empty() && response.stop_reason == "end_turn" {
+                messages.push(Message {
+                    role: "assistant".to_string(),
+                    content: Content::Blocks(response.content.clone()),
+                });
+                messages.push(Message {
+                    role: "user".to_string(),
+                    content: Content::Text(
+                        "Please provide a text summary of the results above.".to_string(),
+                    ),
+                });
+                continue;
+            }
+
             steps_out.push(AgentStepRecord {
                 step_number: steps + 1,
                 duration_ms: llm_duration_ms,

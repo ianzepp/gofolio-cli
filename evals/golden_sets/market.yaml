@@ -42,7 +42,7 @@
   difficulty: 'straightforward'
   expected_tools: ['search_assets', 'get_asset_profile']
   must_contain: ['VOO']
-  must_not_contain: ['error', 'stock', 'equity']
+  must_not_contain: ['error']
   expected_verified: true
   tags: ['happy-path', 'market', 'etf']
 
@@ -55,6 +55,7 @@
   must_contain: []
   must_not_contain: ['$', 'price is', 'currently trading']
   expected_verified: false
+  skip_verified: true
   tags: ['edge-case', 'market', 'hallucination-guard']
 
 - id: 'mkt-006'

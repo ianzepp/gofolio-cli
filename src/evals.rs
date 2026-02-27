@@ -172,7 +172,7 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
     println!("Models: {}", model_labels.join(", "));
 
     let run_started = Instant::now();
-    let run_id = format!("rust-{}", Utc::now().format("%Y%m%d-%H%M%S"));
+    let run_id = format!("rust-run-{}", Utc::now().format("%Y%m%d-%H%M%S"));
     let dispatcher = if args.live {
         let (jwt, base_url) = crate::api::auth::authenticate(&runtime_cfg)
             .await
@@ -243,6 +243,7 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
             });
 
             let worker_cancel = cancel.clone();
+            let worker_run_dir = evals_root.join("results").join(&run_id);
             let worker_handle = tokio::spawn({
                 let cases: Vec<EvalCase> = cases.iter().map(|c| (*c).clone()).collect();
                 let pool_target = pool_target.clone();
@@ -258,6 +259,7 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
                         langsmith.as_ref(),
                         tui_tx,
                         &worker_cancel,
+                        worker_run_dir,
                     )
                     .await
                 }
@@ -284,6 +286,7 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
                 target,
                 &dispatcher,
                 langsmith.as_ref(),
+                evals_root.join("results").join(&run_id),
             )
             .await?;
             for r in &model_results {
@@ -325,7 +328,7 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
         print_model_comparison(&results);
     }
 
-    write_results_jsonl(&evals_root, &results)?;
+    write_results_jsonl(&evals_root, &run_id, &results)?;
     write_results_sqlite(
         &evals_root,
         &run_id,
@@ -680,7 +683,9 @@ async fn run_cases_serial(
     target: &ModelTarget,
     dispatcher: &ToolDispatcher,
     langsmith: Option<&LangSmithConfig>,
+    run_dir: PathBuf,
 ) -> Result<Vec<EvalResult>, String> {
+    create_dir_all(&run_dir).map_err(|e| e.to_string())?;
     let mut results = Vec::with_capacity(cases.len());
     for eval_case in cases {
         let started = Instant::now();
@@ -693,12 +698,14 @@ async fn run_cases_serial(
         )
         .await;
         let elapsed_ms = started.elapsed().as_millis() as u64;
-        results.push(build_eval_result(
+        let eval_result = build_eval_result(
             (*eval_case).clone(),
             target.model.clone(),
             elapsed_ms,
             result,
-        ));
+        );
+        write_result_file(&run_dir, &eval_result);
+        results.push(eval_result);
     }
     Ok(results)
 }
@@ -720,7 +727,9 @@ async fn run_cases_parallel_tui(
     langsmith: Option<&LangSmithConfig>,
     tui_tx: mpsc::UnboundedSender<TuiEvent>,
     cancel: &tokio_util::sync::CancellationToken,
+    run_dir: PathBuf,
 ) -> Result<Vec<EvalResult>, String> {
+    create_dir_all(&run_dir).map_err(|e| e.to_string())?;
     let mut results = Vec::with_capacity(cases.len());
     let mut join_set = JoinSet::new();
     let mut index = 0usize;
@@ -849,7 +858,9 @@ async fn run_cases_parallel_tui(
                 Some(joined) = join_set.join_next() => {
                     match joined {
                         Ok((eval_case, model, elapsed_ms, result)) => {
-                            results.push(build_eval_result_quiet(eval_case, model, elapsed_ms, result));
+                            let eval_result = build_eval_result_quiet(eval_case, model, elapsed_ms, result);
+                            write_result_file(&run_dir, &eval_result);
+                            results.push(eval_result);
                         }
                         Err(_) if cancel.is_cancelled() => break,
                         Err(e) => return Err(format!("parallel task join error: {e}")),
@@ -1176,20 +1187,24 @@ fn grade_tier_c(eval_case: &EvalCase, run: &AgentCaseRun) -> (bool, String) {
     )
 }
 
-fn write_results_jsonl(evals_root: &Path, results: &[EvalResult]) -> Result<(), String> {
-    let results_dir = evals_root.join("results");
-    create_dir_all(&results_dir).map_err(|e| e.to_string())?;
-    let run_id = Utc::now().format("%Y%m%d-%H%M%S");
-    let path = results_dir.join(format!("rust-run-{run_id}.jsonl"));
-    let mut body = String::new();
-    for result in results {
-        body.push_str(
-            &serde_json::to_string(result).map_err(|e| format!("serialize result failed: {e}"))?,
-        );
-        body.push('\n');
+fn write_result_file(run_dir: &Path, result: &EvalResult) {
+    let path = run_dir.join(format!("{}.json", result.case_id));
+    match serde_json::to_string_pretty(result) {
+        Ok(body) => {
+            if let Err(e) = std::fs::write(&path, body) {
+                eprintln!("warn: failed to write {}: {e}", path.display());
+            }
+        }
+        Err(e) => eprintln!("warn: failed to serialize {}: {e}", result.case_id),
     }
-    std::fs::write(&path, body).map_err(|e| e.to_string())?;
-    println!("Wrote {}", path.display());
+}
+
+fn write_results_jsonl(evals_root: &Path, run_id: &str, results: &[EvalResult]) -> Result<(), String> {
+    // Individual case files are already written incrementally by write_result_file.
+    // This function ensures the dir exists and reports the final count.
+    let run_dir = evals_root.join("results").join(run_id);
+    create_dir_all(&run_dir).map_err(|e| e.to_string())?;
+    println!("Results: {} cases in {}/", results.len(), run_dir.display());
     Ok(())
 }
 

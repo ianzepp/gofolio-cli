@@ -14,5 +14,69 @@
       "dataSource": "YAHOO",
       "currency": "USD"
     }
+  ],
+  "NVDA": [
+    {
+      "symbol": "NVDA",
+      "name": "NVIDIA Corporation",
+      "dataSource": "YAHOO",
+      "currency": "USD"
+    }
+  ],
+  "NVIDIA": [
+    {
+      "symbol": "NVDA",
+      "name": "NVIDIA Corporation",
+      "dataSource": "YAHOO",
+      "currency": "USD"
+    }
+  ],
+  "MSFT": [
+    {
+      "symbol": "MSFT",
+      "name": "Microsoft Corporation",
+      "dataSource": "YAHOO",
+      "currency": "USD"
+    }
+  ],
+  "Microsoft": [
+    {
+      "symbol": "MSFT",
+      "name": "Microsoft Corporation",
+      "dataSource": "YAHOO",
+      "currency": "USD"
+    }
+  ],
+  "GOOGL": [
+    {
+      "symbol": "GOOGL",
+      "name": "Alphabet Inc.",
+      "dataSource": "YAHOO",
+      "currency": "USD"
+    }
+  ],
+  "GOOG": [
+    {
+      "symbol": "GOOGL",
+      "name": "Alphabet Inc.",
+      "dataSource": "YAHOO",
+      "currency": "USD"
+    }
+  ],
+  "Google": [
+    {
+      "symbol": "GOOGL",
+      "name": "Alphabet Inc.",
+      "dataSource": "YAHOO",
+      "currency": "USD"
+    }
+  ],
+  "Alphabet": [
+    {
+      "symbol": "GOOGL",
+      "name": "Alphabet Inc.",
+      "dataSource": "YAHOO",
+      "currency": "USD"
+    }
   ]
 }

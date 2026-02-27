@@ -14,8 +14,9 @@
   query: 'Show me my portfolio balance'
   category: 'account'
   difficulty: 'straightforward'
-  expected_tools: ['list_accounts']
-  must_contain: ['balance']
+  expected_tools: ['get_portfolio_summary']
+  must_contain_any: ['$', 'USD']
+  must_contain: []
   must_not_contain: []
   expected_verified: true
   tags: ['happy-path', 'account']

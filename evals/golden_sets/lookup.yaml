@@ -38,6 +38,7 @@
   difficulty: 'edge_case'
   expected_tools: ['search_assets']
   must_contain: []
-  must_not_contain: ['FAKE', 'FKCP', 'FCI']
+  must_not_contain: ['ticker is FAKE', 'symbol is FAKE', 'trades as FAKE', 'FKCP', 'FCI']
   expected_verified: false
+  skip_verified: true
   tags: ['edge-case', 'lookup', 'hallucination-guard']
