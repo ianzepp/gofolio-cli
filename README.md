@@ -160,6 +160,13 @@ cargo run -- evals get cli/evals/results/rust-run-20260227-123456 --case act-001
 cargo run -- evals get cli/evals/results/rust-run-20260227-123456/act-001.json
 ```
 
+Replay a prior run with current graders (writes a new replay run dir and prints pass/fail deltas):
+
+```bash
+cargo run -- evals replay --run-id rust-run-20260227-123456
+cargo run -- evals replay --path cli/evals/results/rust-run-20260227-123456
+```
+
 ## Evals Output Modes
 
 ### Evals TUI (default)

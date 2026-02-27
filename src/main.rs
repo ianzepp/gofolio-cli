@@ -95,6 +95,18 @@ enum EvalsCommand {
         #[arg(long = "case")]
         case_id: Option<String>,
     },
+    /// Re-grade stored run outputs into a new replay run directory
+    Replay {
+        /// Evals root path (auto-detected from evals/ or cli/evals/)
+        #[arg(long)]
+        evals_root: Option<String>,
+        /// Source run id under <evals_root>/results (defaults to latest run)
+        #[arg(long)]
+        run_id: Option<String>,
+        /// Optional explicit source run directory path
+        #[arg(long)]
+        path: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -156,6 +168,21 @@ async fn main() {
                     case_id,
                 };
                 if let Err(e) = evals::get(args) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            EvalsCommand::Replay {
+                evals_root,
+                run_id,
+                path,
+            } => {
+                let args = evals::ReplayArgs {
+                    evals_root: evals_root.map(std::path::PathBuf::from),
+                    run_id,
+                    path: path.map(std::path::PathBuf::from),
+                };
+                if let Err(e) = evals::replay(args) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

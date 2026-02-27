@@ -44,6 +44,13 @@ pub struct GetArgs {
     pub case_id: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ReplayArgs {
+    pub evals_root: Option<PathBuf>,
+    pub run_id: Option<String>,
+    pub path: Option<PathBuf>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct StoredEvalResult {
     model: String,
@@ -53,6 +60,27 @@ struct StoredEvalResult {
     error: Option<String>,
     duration_ms: u64,
     input_tokens: u64,
+    output_tokens: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ReplaySourceCase {
+    case_id: String,
+    model: String,
+    pass: bool,
+    #[serde(default)]
+    tools_called: Vec<String>,
+    #[serde(default)]
+    response: String,
+    #[serde(default)]
+    verified: bool,
+    #[serde(default)]
+    error: Option<String>,
+    #[serde(default)]
+    duration_ms: u64,
+    #[serde(default)]
+    input_tokens: u64,
+    #[serde(default)]
     output_tokens: u64,
 }
 
@@ -815,6 +843,23 @@ fn load_run_results(run_dir: &Path) -> Result<Vec<StoredEvalResult>, String> {
     Ok(results)
 }
 
+fn load_replay_source_cases(run_dir: &Path) -> Result<Vec<ReplaySourceCase>, String> {
+    let mut cases = Vec::new();
+    for entry in read_dir(run_dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let body = read_to_string(&path).map_err(|e| e.to_string())?;
+        let case: ReplaySourceCase = serde_json::from_str(&body)
+            .map_err(|e| format!("failed to parse replay case {}: {e}", path.display()))?;
+        cases.push(case);
+    }
+    cases.sort_by(|a, b| a.case_id.cmp(&b.case_id));
+    Ok(cases)
+}
+
 fn load_suites(root: &Path) -> Result<std::collections::HashMap<String, SuiteConfig>, String> {
     let yaml = read_to_string(root.join("suites.yaml")).map_err(|e| e.to_string())?;
     serde_yaml::from_str(&yaml).map_err(|e| format!("failed to parse suites.yaml: {e}"))
@@ -1344,10 +1389,25 @@ struct Grade {
     detail_c: String,
 }
 
+struct GradeInput<'a> {
+    tools_called: &'a [String],
+    response: &'a str,
+    verified: bool,
+}
+
 fn grade_case(eval_case: &EvalCase, run: &AgentCaseRun) -> Grade {
-    let (tier_a, detail_a) = grade_tier_a(eval_case, run);
-    let (tier_b, detail_b) = grade_tier_b(eval_case, run);
-    let (tier_c, detail_c) = grade_tier_c(eval_case, run);
+    let input = GradeInput {
+        tools_called: &run.tools_called,
+        response: &run.response,
+        verified: run.verified,
+    };
+    grade_case_with_input(eval_case, &input)
+}
+
+fn grade_case_with_input(eval_case: &EvalCase, input: &GradeInput<'_>) -> Grade {
+    let (tier_a, detail_a) = grade_tier_a(eval_case, input);
+    let (tier_b, detail_b) = grade_tier_b(eval_case, input);
+    let (tier_c, detail_c) = grade_tier_c(eval_case, input);
     Grade {
         pass: tier_a && tier_b && tier_c,
         tier_a,
@@ -1359,7 +1419,7 @@ fn grade_case(eval_case: &EvalCase, run: &AgentCaseRun) -> Grade {
     }
 }
 
-fn grade_tier_a(eval_case: &EvalCase, run: &AgentCaseRun) -> (bool, String) {
+fn grade_tier_a(eval_case: &EvalCase, input: &GradeInput<'_>) -> (bool, String) {
     let must_contain = if eval_case.tool_must_contain.is_empty() {
         &eval_case.expected_tools
     } else {
@@ -1372,7 +1432,7 @@ fn grade_tier_a(eval_case: &EvalCase, run: &AgentCaseRun) -> (bool, String) {
         .iter()
         .map(|t| t.to_string())
         .collect();
-    let actual: HashSet<String> = run.tools_called.iter().map(|t| t.to_string()).collect();
+    let actual: HashSet<String> = input.tools_called.iter().map(|t| t.to_string()).collect();
 
     if required.is_empty() && forbidden.is_empty() && actual.is_empty() {
         return (true, "No tools expected, none called".to_string());
@@ -1415,8 +1475,8 @@ fn grade_tier_a(eval_case: &EvalCase, run: &AgentCaseRun) -> (bool, String) {
     )
 }
 
-fn grade_tier_b(eval_case: &EvalCase, run: &AgentCaseRun) -> (bool, String) {
-    let lower = run.response.to_lowercase();
+fn grade_tier_b(eval_case: &EvalCase, input: &GradeInput<'_>) -> (bool, String) {
+    let lower = input.response.to_lowercase();
     let missing: Vec<String> = eval_case
         .must_contain
         .iter()
@@ -1459,20 +1519,190 @@ fn grade_tier_b(eval_case: &EvalCase, run: &AgentCaseRun) -> (bool, String) {
     (true, "All content assertions passed".to_string())
 }
 
-fn grade_tier_c(eval_case: &EvalCase, run: &AgentCaseRun) -> (bool, String) {
+fn grade_tier_c(eval_case: &EvalCase, input: &GradeInput<'_>) -> (bool, String) {
     if eval_case.skip_verified {
-        return (true, format!("verified={} (skipped)", run.verified));
+        return (true, format!("verified={} (skipped)", input.verified));
     }
-    if run.verified == eval_case.expected_verified {
-        return (true, format!("verified={} as expected", run.verified));
+    if input.verified == eval_case.expected_verified {
+        return (true, format!("verified={} as expected", input.verified));
     }
     (
         false,
         format!(
             "Expected verified={}, got {}",
-            eval_case.expected_verified, run.verified
+            eval_case.expected_verified, input.verified
         ),
     )
+}
+
+pub fn replay(args: ReplayArgs) -> Result<(), String> {
+    let evals_root = resolve_evals_root(args.evals_root)?;
+    let source_run_dir = if let Some(path) = args.path {
+        if !path.is_dir() {
+            return Err(format!("replay path is not a directory: {}", path.display()));
+        }
+        path
+    } else {
+        resolve_run_dir(&evals_root, args.run_id.as_deref())?
+    };
+
+    let source_run_id = source_run_dir
+        .file_name()
+        .and_then(|v| v.to_str())
+        .unwrap_or("unknown-run")
+        .to_string();
+
+    let source_cases = load_replay_source_cases(&source_run_dir)?;
+    if source_cases.is_empty() {
+        return Err(format!(
+            "no replay case files found in {}",
+            source_run_dir.display()
+        ));
+    }
+
+    let all_cases = load_cases(&evals_root)?;
+    let case_by_id: std::collections::HashMap<String, EvalCase> = all_cases
+        .into_iter()
+        .map(|case| (case.id.clone(), case))
+        .collect();
+
+    let run_id = format!(
+        "replay-{}-{}",
+        source_run_id,
+        Utc::now().format("%Y%m%d-%H%M%S")
+    );
+    let run_dir = evals_root.join("results").join(&run_id);
+    create_dir_all(&run_dir).map_err(|e| e.to_string())?;
+
+    println!(
+        "Replay source: {} ({} cases)",
+        source_run_dir.display(),
+        source_cases.len()
+    );
+    println!("Replay run: {}", run_dir.display());
+
+    let started = Instant::now();
+    let mut results = Vec::with_capacity(source_cases.len());
+    let mut improved = 0usize;
+    let mut regressed = 0usize;
+    let mut unchanged_pass = 0usize;
+    let mut unchanged_fail = 0usize;
+
+    for source in source_cases {
+        let eval_result = if let Some(eval_case) = case_by_id.get(&source.case_id) {
+            let input = GradeInput {
+                tools_called: &source.tools_called,
+                response: &source.response,
+                verified: source.verified,
+            };
+            let grade = grade_case_with_input(eval_case, &input);
+
+            if source.pass && !grade.pass {
+                regressed += 1;
+            } else if !source.pass && grade.pass {
+                improved += 1;
+            } else if source.pass {
+                unchanged_pass += 1;
+            } else {
+                unchanged_fail += 1;
+            }
+
+            EvalResult {
+                case_id: eval_case.id.clone(),
+                model: source.model.clone(),
+                description: eval_case.description.clone(),
+                query: eval_case.query.clone(),
+                category: eval_case.category.clone(),
+                difficulty: eval_case.difficulty.clone(),
+                tags: eval_case.tags.clone(),
+                pass: grade.pass,
+                tier_a: grade.tier_a,
+                tier_b: grade.tier_b,
+                tier_c: grade.tier_c,
+                detail_a: grade.detail_a,
+                detail_b: grade.detail_b,
+                detail_c: grade.detail_c,
+                tools_called: source.tools_called.clone(),
+                response: source.response.clone(),
+                verified: source.verified,
+                verification: None,
+                duration_ms: source.duration_ms,
+                input_tokens: source.input_tokens,
+                output_tokens: source.output_tokens,
+                timestamp: Utc::now().to_rfc3339(),
+                error: source.error.clone(),
+                steps: Vec::new(),
+            }
+        } else {
+            regressed += 1;
+            EvalResult {
+                case_id: source.case_id.clone(),
+                model: source.model.clone(),
+                description: "(missing case definition)".to_string(),
+                query: String::new(),
+                category: "unknown".to_string(),
+                difficulty: "unknown".to_string(),
+                tags: Vec::new(),
+                pass: false,
+                tier_a: false,
+                tier_b: false,
+                tier_c: false,
+                detail_a: "N/A".to_string(),
+                detail_b: "N/A".to_string(),
+                detail_c: "N/A".to_string(),
+                tools_called: source.tools_called.clone(),
+                response: source.response.clone(),
+                verified: source.verified,
+                verification: None,
+                duration_ms: source.duration_ms,
+                input_tokens: source.input_tokens,
+                output_tokens: source.output_tokens,
+                timestamp: Utc::now().to_rfc3339(),
+                error: Some(format!(
+                    "case id '{}' no longer exists in eval definitions",
+                    source.case_id
+                )),
+                steps: Vec::new(),
+            }
+        };
+
+        write_result_file(&run_dir, &eval_result);
+        results.push(eval_result);
+    }
+
+    results.sort_by(|a, b| {
+        a.model
+            .cmp(&b.model)
+            .then_with(|| a.case_id.cmp(&b.case_id))
+    });
+
+    let total = results.len();
+    let passed = results.iter().filter(|r| r.pass).count();
+    let failed = total - passed;
+    let errors = results.iter().filter(|r| r.error.is_some()).count();
+    println!(
+        "Replay summary: total={} passed={} failed={} errors={}",
+        total, passed, failed, errors
+    );
+    println!(
+        "Replay diff: unchanged_pass={} unchanged_fail={} improved={} regressed={}",
+        unchanged_pass, unchanged_fail, improved, regressed
+    );
+
+    print_model_summary(&results);
+    write_results_jsonl(&evals_root, &run_id, &results)?;
+    let models: std::collections::BTreeSet<String> =
+        results.iter().map(|r| r.model.clone()).collect();
+    write_results_sqlite(
+        &evals_root,
+        &run_id,
+        &format!("replay:{source_run_id}"),
+        &models.into_iter().collect::<Vec<_>>().join(", "),
+        started.elapsed().as_millis() as u64,
+        &results,
+    )?;
+
+    Ok(())
 }
 
 fn write_result_file(run_dir: &Path, result: &EvalResult) {
