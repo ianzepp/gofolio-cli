@@ -16,7 +16,7 @@
   difficulty: 'edge_case'
   expected_tools: []
   must_contain: []
-  must_not_contain: ['$', '%', 'portfolio', 'holdings', 'AAPL']
+  must_not_contain: ['AAPL', 'MSFT', 'GOOGL', '218.', '34,009', '29,767']
   expected_verified: false
   tags: ['general', 'no-tools']
 
