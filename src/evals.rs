@@ -1158,6 +1158,7 @@ async fn run_cases_parallel_tui(
                         let _ = tx.send(TuiEvent::CaseFinished {
                             case_id: eval_case.id.clone(),
                             pass: false,
+                            duration_ms: 0,
                             detail: crate::evals_tui::CaseDetail {
                                 error: Some(err.clone()),
                                 ..Default::default()
@@ -1223,6 +1224,7 @@ async fn run_cases_parallel_tui(
                 let _ = tx.send(TuiEvent::CaseFinished {
                     case_id: eval_case.id.clone(),
                     pass,
+                    duration_ms: elapsed_ms,
                     detail,
                 });
 

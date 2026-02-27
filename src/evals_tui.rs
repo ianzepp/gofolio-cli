@@ -31,6 +31,7 @@ pub enum TuiEvent {
     CaseFinished {
         case_id: String,
         pass: bool,
+        duration_ms: u64,
         detail: CaseDetail,
     },
     AllDone,
@@ -88,6 +89,7 @@ struct TuiState {
     elapsed_secs: u64,
     spinner_frame: usize,
     done: bool,
+    latency_samples_ms: Vec<u64>,
 }
 
 const SPINNER: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -112,6 +114,7 @@ impl TuiState {
             elapsed_secs: 0,
             spinner_frame: 0,
             done: false,
+            latency_samples_ms: Vec::new(),
         }
     }
 
@@ -144,6 +147,7 @@ impl TuiState {
             TuiEvent::CaseFinished {
                 case_id,
                 pass,
+                duration_ms,
                 detail,
             } => {
                 if let Some(row) = self.rows.iter_mut().find(|r| r.case_id == case_id) {
@@ -160,6 +164,9 @@ impl TuiState {
                     row.detail = detail;
                 }
                 self.completed += 1;
+                if duration_ms > 0 {
+                    self.latency_samples_ms.push(duration_ms);
+                }
             }
             TuiEvent::AllDone => {
                 self.elapsed_secs = self.started_at.elapsed().as_secs();
@@ -438,6 +445,7 @@ fn render_row(row: &RowState, spinner_char: char, width: usize, selected: bool) 
 
 fn render_footer(frame: &mut ratatui::Frame, area: Rect, state: &TuiState) {
     let elapsed = state.elapsed_secs;
+    let (p50_ms, p95_ms) = latency_percentiles(&state.latency_samples_ms);
     let footer = Line::from(vec![
         Span::styled(" Completed: ", Style::default().fg(theme::MUTED)),
         Span::styled(
@@ -463,6 +471,10 @@ fn render_footer(frame: &mut ratatui::Frame, area: Rect, state: &TuiState) {
             format!("  Elapsed: {elapsed}s"),
             Style::default().fg(theme::MUTED),
         ),
+        Span::styled("  p50: ", Style::default().fg(theme::MUTED)),
+        Span::styled(format_seconds(p50_ms), Style::default().fg(theme::WHITE)),
+        Span::styled("  p95: ", Style::default().fg(theme::MUTED)),
+        Span::styled(format_seconds(p95_ms), Style::default().fg(theme::WHITE)),
     ]);
     let hint_text = if state.done {
         " ↑↓: select  Enter: details  q: exit"
@@ -475,6 +487,26 @@ fn render_footer(frame: &mut ratatui::Frame, area: Rect, state: &TuiState) {
     ));
     let widget = Paragraph::new(vec![footer, hint]);
     frame.render_widget(widget, area);
+}
+
+fn format_seconds(duration_ms: u64) -> String {
+    format!("{:.2}s", duration_ms as f64 / 1000.0)
+}
+
+fn latency_percentiles(samples: &[u64]) -> (u64, u64) {
+    if samples.is_empty() {
+        return (0, 0);
+    }
+    let mut values = samples.to_vec();
+    values.sort_unstable();
+    let p50 = values[percentile_index(values.len(), 50)];
+    let p95 = values[percentile_index(values.len(), 95)];
+    (p50, p95)
+}
+
+fn percentile_index(len: usize, percentile: usize) -> usize {
+    let rank = (len * percentile).div_ceil(100);
+    rank.saturating_sub(1).min(len.saturating_sub(1))
 }
 
 fn render_detail_modal(frame: &mut ratatui::Frame, area: Rect, row: &RowState, scroll: u16, run_id: &str) {
