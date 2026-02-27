@@ -3,7 +3,7 @@
   query: 'Tell me about Apple stock - what sector is it in?'
   category: 'profile'
   difficulty: 'straightforward'
-  expected_tools: ['asset_profile']
+  expected_tools: ['get_asset_profile']
   must_contain: ['Apple']
   must_not_contain: []
   expected_verified: true

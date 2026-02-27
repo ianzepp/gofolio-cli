@@ -151,15 +151,17 @@ pub async fn run_with_dispatcher(
                 t.finish(&text, total_input_tokens, total_output_tokens, steps + 1);
             }
 
+            let tool_calls = all_tool_calls;
+            let verified = is_verified_run(&text, &tool_calls);
             return Ok(AgentRunResult {
                 text,
                 input_tokens: total_input_tokens,
                 output_tokens: total_output_tokens,
                 last_input_tokens,
                 steps: steps_out,
-                tool_calls: all_tool_calls,
+                tool_calls,
                 chart_data,
-                verified: conversation_has_tool_results(&messages),
+                verified,
             });
         }
 
@@ -301,15 +303,6 @@ fn extract_last_user_input(messages: &[Message]) -> String {
         .unwrap_or_default()
 }
 
-fn conversation_has_tool_results(messages: &[Message]) -> bool {
-    messages.iter().any(message_has_tool_result)
-}
-
-fn message_has_tool_result(message: &Message) -> bool {
-    match &message.content {
-        Content::Blocks(blocks) => blocks
-            .iter()
-            .any(|block| matches!(block, ContentBlock::ToolResult { .. })),
-        Content::Text(_) => false,
-    }
+fn is_verified_run(text: &str, tool_calls: &[ToolCallRecord]) -> bool {
+    !text.trim().is_empty() && !tool_calls.is_empty() && tool_calls.iter().all(|tc| tc.success)
 }

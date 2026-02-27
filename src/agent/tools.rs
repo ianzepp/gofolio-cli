@@ -312,7 +312,7 @@ pub fn all_tools() -> Vec<Tool> {
             }),
         },
         Tool {
-            name: "get_market_data".to_string(),
+            name: "get_fear_greed_index".to_string(),
             description: "Get current market sentiment data. Returns: \
                 fearAndGreedIndex object with CRYPTOCURRENCIES and STOCKS entries, \
                 each containing dataSource, symbol, currency, and marketPrice \
@@ -324,6 +324,59 @@ pub fn all_tools() -> Vec<Tool> {
                 "type": "object",
                 "properties": {},
                 "required": []
+            }),
+        },
+        Tool {
+            name: "exchange_rate".to_string(),
+            description: "Get a currency exchange rate for a specific pair and date. \
+                Inputs: fromCurrency (e.g. 'USD'), toCurrency (e.g. 'EUR'), and optional date \
+                in YYYY-MM-DD format (defaults to today). Returns: { marketPrice } where \
+                marketPrice is the rate for 1 unit of fromCurrency in toCurrency."
+                .to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "fromCurrency": {
+                        "type": "string",
+                        "description": "Source currency ISO code (e.g. 'USD')"
+                    },
+                    "toCurrency": {
+                        "type": "string",
+                        "description": "Target currency ISO code (e.g. 'EUR')"
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "Optional ISO date in YYYY-MM-DD format. Defaults to today."
+                    }
+                },
+                "required": ["fromCurrency", "toCurrency"]
+            }),
+        },
+        Tool {
+            name: "price_history".to_string(),
+            description: "Get daily historical prices for a symbol over a lookback window. \
+                Use this for requests like 'last 30 days'. Returns symbol metadata plus \
+                historicalData entries with date and value. \
+                Inputs: dataSource + symbol (typically from search_assets), optional days \
+                (defaults to 30)."
+                .to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "dataSource": {
+                        "type": "string",
+                        "description": "Data source identifier (e.g. 'YAHOO', 'COINGECKO', 'MANUAL')"
+                    },
+                    "symbol": {
+                        "type": "string",
+                        "description": "Asset symbol (e.g. 'AAPL', 'VWCE.DE', 'bitcoin')"
+                    },
+                    "days": {
+                        "type": "integer",
+                        "description": "Number of trailing days to fetch (e.g. 30, 90, 365). Defaults to 30."
+                    }
+                },
+                "required": ["dataSource", "symbol"]
             }),
         },
         Tool {

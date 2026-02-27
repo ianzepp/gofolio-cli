@@ -1,0 +1,30 @@
+{
+  "YAHOO:AAPL": {
+    "currency": "USD",
+    "historicalData": [
+      { "date": "2025-12-20T00:00:00.000Z", "value": 191.34 },
+      { "date": "2025-12-21T00:00:00.000Z", "value": 192.11 },
+      { "date": "2025-12-22T00:00:00.000Z", "value": 193.02 },
+      { "date": "2025-12-23T00:00:00.000Z", "value": 194.28 },
+      { "date": "2025-12-24T00:00:00.000Z", "value": 195.17 },
+      { "date": "2025-12-25T00:00:00.000Z", "value": 195.88 },
+      { "date": "2025-12-26T00:00:00.000Z", "value": 196.42 },
+      { "date": "2025-12-27T00:00:00.000Z", "value": 197.03 },
+      { "date": "2025-12-28T00:00:00.000Z", "value": 197.65 },
+      { "date": "2025-12-29T00:00:00.000Z", "value": 198.45 }
+    ],
+    "marketPrice": 198.45,
+    "dataSource": "YAHOO",
+    "symbol": "AAPL"
+  },
+  "YAHOO:TSLA": {
+    "currency": "USD",
+    "historicalData": [
+      { "date": "2025-12-20T00:00:00.000Z", "value": 238.1 },
+      { "date": "2025-12-29T00:00:00.000Z", "value": 244.2 }
+    ],
+    "marketPrice": 244.2,
+    "dataSource": "YAHOO",
+    "symbol": "TSLA"
+  }
+}

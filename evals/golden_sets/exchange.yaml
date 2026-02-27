@@ -21,11 +21,11 @@
   tags: ['happy-path', 'exchange']
 
 - id: 'fx-003'
-  description: 'Stock price in foreign currency requires market_data + exchange_rate'
+  description: 'Stock price in foreign currency requires get_fear_greed_index + exchange_rate'
   query: 'What is the current price of AAPL in EUR?'
   category: 'exchange'
   difficulty: 'ambiguous'
-  expected_tools: ['market_data', 'exchange_rate']
+  expected_tools: ['get_fear_greed_index', 'exchange_rate']
   must_contain: ['AAPL', 'EUR']
   must_not_contain: []
   expected_verified: true
@@ -36,7 +36,7 @@
   query: 'What is the price of AAPL in EUR and JPY?'
   category: 'exchange'
   difficulty: 'ambiguous'
-  expected_tools: ['market_data', 'exchange_rate']
+  expected_tools: ['get_fear_greed_index', 'exchange_rate']
   must_contain: ['AAPL', 'EUR', 'JPY']
   must_not_contain: []
   expected_verified: true

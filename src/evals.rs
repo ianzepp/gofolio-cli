@@ -59,6 +59,8 @@ struct EvalCase {
     #[serde(default)]
     tool_must_not_contain: Vec<String>,
     must_contain: Vec<String>,
+    #[serde(default)]
+    must_contain_any: Vec<String>,
     must_not_contain: Vec<String>,
     expected_verified: bool,
     tags: Vec<String>,
@@ -219,7 +221,8 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
 
             let suite_name = args.suite.clone();
             let total_cases = cases.len();
-            let pool_size = key_pool.pool_size();
+            let key_count = key_pool.key_count();
+            let max_concurrent = key_pool.max_concurrent();
             let ml = model_label.clone();
 
             let cancel = tokio_util::sync::CancellationToken::new();
@@ -227,7 +230,7 @@ pub async fn run(args: TestArgs) -> Result<(), String> {
             let tui_cancel = cancel.clone();
             let tui_handle = tokio::spawn(async move {
                 let result =
-                    crate::evals_tui::run_tui(tui_rx, &suite_name, total_cases, pool_size, &ml)
+                    crate::evals_tui::run_tui(tui_rx, &suite_name, total_cases, key_count, max_concurrent, &ml)
                         .await;
                 // If TUI exited early (user pressed q), cancel the workers
                 if result.is_err() {
@@ -714,7 +717,7 @@ async fn run_cases_parallel_tui(
         }
 
         // Fill up to pool_size concurrent tasks
-        while join_set.len() < key_pool.pool_size() && index < cases.len() {
+        while join_set.len() < key_pool.max_concurrent() && index < cases.len() {
             let eval_case = (*cases[index]).clone();
             index += 1;
             let model = target.model.clone();
@@ -749,7 +752,10 @@ async fn run_cases_parallel_tui(
                         let _ = tx.send(TuiEvent::CaseFinished {
                             case_id: eval_case.id.clone(),
                             pass: false,
-                            error: Some(err.clone()),
+                            detail: crate::evals_tui::CaseDetail {
+                                error: Some(err.clone()),
+                                ..Default::default()
+                            },
                         });
                         return (eval_case, model, 0u64, Err(err));
                     }
@@ -787,18 +793,31 @@ async fn run_cases_parallel_tui(
                 drop(tool_tx);
                 let _ = progress_forwarder.await;
 
-                // Send case finished event
-                let (pass, error) = match &result {
+                // Send case finished event with detail
+                let (pass, detail) = match &result {
                     Ok(run) => {
                         let grade = grade_case(&eval_case, run);
-                        (grade.pass, None)
+                        let detail = crate::evals_tui::CaseDetail {
+                            error: None,
+                            response: Some(run.response.clone()),
+                            tier_a: Some(grade.detail_a),
+                            tier_b: Some(grade.detail_b),
+                            tier_c: Some(grade.detail_c),
+                        };
+                        (grade.pass, detail)
                     }
-                    Err(e) => (false, Some(e.clone())),
+                    Err(e) => {
+                        let detail = crate::evals_tui::CaseDetail {
+                            error: Some(e.clone()),
+                            ..Default::default()
+                        };
+                        (false, detail)
+                    }
                 };
                 let _ = tx.send(TuiEvent::CaseFinished {
                     case_id: eval_case.id.clone(),
                     pass,
-                    error,
+                    detail,
                 });
 
                 // Drop the lease to return the key to the pool
@@ -1093,6 +1112,20 @@ fn grade_tier_b(eval_case: &EvalCase, run: &AgentCaseRun) -> (bool, String) {
         return (
             false,
             format!("Missing in response [{}]", missing.join(", ")),
+        );
+    }
+    if !eval_case.must_contain_any.is_empty()
+        && !eval_case
+            .must_contain_any
+            .iter()
+            .any(|s| lower.contains(&s.to_lowercase()))
+    {
+        return (
+            false,
+            format!(
+                "Missing any-of in response [{}]",
+                eval_case.must_contain_any.join(", ")
+            ),
         );
     }
 

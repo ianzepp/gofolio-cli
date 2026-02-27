@@ -3,7 +3,7 @@
   query: 'What accounts do I have?'
   category: 'account'
   difficulty: 'straightforward'
-  expected_tools: ['account_overview']
+  expected_tools: ['list_accounts']
   must_contain: ['account']
   must_not_contain: []
   expected_verified: true
@@ -14,7 +14,7 @@
   query: 'Show me my portfolio balance'
   category: 'account'
   difficulty: 'straightforward'
-  expected_tools: ['account_overview']
+  expected_tools: ['list_accounts']
   must_contain: ['balance']
   must_not_contain: []
   expected_verified: true

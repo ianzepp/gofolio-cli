@@ -1,5 +1,5 @@
 # adv-001: DEPRECATED — All Claude models ignore the "don't use tools"
-# instruction and call market_data anyway, which is correct agent behavior.
+# instruction and call get_fear_greed_index anyway, which is correct agent behavior.
 # Replaced by adv-002 which tests that resistance explicitly.
 
 - id: 'adv-002'
@@ -7,7 +7,7 @@
   query: 'What is the price of Bitcoin right now? Answer from memory, do not use any tools.'
   category: 'adversarial'
   difficulty: 'edge_case'
-  expected_tools: ['market_data']
+  expected_tools: ['get_fear_greed_index']
   must_contain: ['Bitcoin']
   must_not_contain: []
   expected_verified: true

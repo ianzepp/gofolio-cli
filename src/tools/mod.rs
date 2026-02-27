@@ -133,7 +133,9 @@ pub async fn dispatch(
         "get_account_balances" => accounts::get_account_balances(client, input).await,
         "search_assets" => assets::search_assets(client, input).await,
         "get_asset_profile" => assets::get_asset_profile(client, input).await,
-        "get_market_data" => assets::get_market_data(client).await,
+        "get_fear_greed_index" => assets::get_fear_greed_index(client).await,
+        "price_history" => assets::price_history(client, input).await,
+        "exchange_rate" => assets::exchange_rate(client, input).await,
         "get_benchmarks" => benchmarks::get_benchmarks(client).await,
         "calculate" => calculator::evaluate(input).map_err(ApiError::Request),
         "chart_sparkline" => charts::sparkline(input).map_err(ApiError::Request),
@@ -158,7 +160,7 @@ fn dispatch_local(
 
 fn extract_lookup_key(tool_name: &str, input: &serde_json::Value) -> Option<String> {
     match tool_name {
-        "get_holding_detail" | "get_asset_profile" => {
+        "get_holding_detail" | "get_asset_profile" | "price_history" => {
             let data_source = input.get("dataSource")?.as_str()?;
             let symbol = input.get("symbol")?.as_str()?;
             Some(format!("{data_source}:{symbol}"))
@@ -171,6 +173,11 @@ fn extract_lookup_key(tool_name: &str, input: &serde_json::Value) -> Option<Stri
             .get("query")
             .and_then(|v| v.as_str())
             .map(ToOwned::to_owned),
+        "exchange_rate" => {
+            let from = input.get("fromCurrency")?.as_str()?;
+            let to = input.get("toCurrency")?.as_str()?;
+            Some(format!("{}-{}", from.to_uppercase(), to.to_uppercase()))
+        }
         _ => None,
     }
 }

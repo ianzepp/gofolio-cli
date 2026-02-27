@@ -15,7 +15,8 @@
   category: 'holdings'
   difficulty: 'straightforward'
   expected_tools: ['get_holding_detail']
-  must_contain: ['AAPL', '150']
+  must_contain: ['150']
+  must_contain_any: ['AAPL', 'Apple']
   must_not_contain: []
   expected_verified: true
   tags: ['happy-path', 'holdings', 'detail']

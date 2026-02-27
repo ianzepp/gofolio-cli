@@ -3,7 +3,7 @@
   query: 'Look up the ticker symbol for Tesla'
   category: 'lookup'
   difficulty: 'straightforward'
-  expected_tools: ['symbol_lookup']
+  expected_tools: ['search_assets']
   must_contain: ['TSLA']
   must_not_contain: []
   expected_verified: true
@@ -14,7 +14,7 @@
   query: 'Find the symbol for Vanguard S&P 500 ETF'
   category: 'lookup'
   difficulty: 'straightforward'
-  expected_tools: ['symbol_lookup']
+  expected_tools: ['search_assets']
   must_contain: ['VOO']
   must_not_contain: []
   expected_verified: true

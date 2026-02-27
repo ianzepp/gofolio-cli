@@ -3,7 +3,7 @@
   query: 'How are the market benchmarks doing?'
   category: 'benchmark'
   difficulty: 'straightforward'
-  expected_tools: ['market_benchmarks']
+  expected_tools: ['get_benchmarks']
   must_contain: ['benchmark']
   must_not_contain: []
   expected_verified: true

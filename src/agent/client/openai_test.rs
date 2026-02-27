@@ -63,7 +63,7 @@ fn parse_response_maps_finish_reason_and_usage() {
                             "id":"tc_1",
                             "type":"function",
                             "function":{
-                                "name":"get_market_data",
+                                "name":"get_fear_greed_index",
                                 "arguments":"{\"symbol\":\"AAPL\"}"
                             }
                         }

@@ -1,0 +1,18 @@
+{
+  "fearAndGreedIndex": {
+    "STOCKS": {
+      "dataSource": "FRED",
+      "symbol": "FGI_STOCKS",
+      "currency": "USD",
+      "historicalData": [],
+      "marketPrice": 61
+    },
+    "CRYPTOCURRENCIES": {
+      "dataSource": "FRED",
+      "symbol": "FGI_CRYPTO",
+      "currency": "USD",
+      "historicalData": [],
+      "marketPrice": 57
+    }
+  }
+}
