@@ -4,8 +4,11 @@ use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 
 use crate::agent::client::Provider;
 
+/// Maximum concurrent leases per API key.
+const MAX_LEASES_PER_KEY: usize = 6;
+
 /// A pool of API keys for a single provider.
-/// Max concurrency equals the number of keys — natural backpressure.
+/// Max concurrency = number of keys × MAX_LEASES_PER_KEY.
 pub struct KeyPool {
     keys: Vec<String>,
     next: Mutex<usize>,
@@ -22,7 +25,8 @@ pub struct KeyLease {
 impl KeyPool {
     pub fn new(keys: Vec<String>) -> Self {
         assert!(!keys.is_empty(), "KeyPool requires at least one key");
-        let semaphore = Arc::new(Semaphore::new(keys.len()));
+        let total_permits = keys.len() * MAX_LEASES_PER_KEY;
+        let semaphore = Arc::new(Semaphore::new(total_permits));
         Self {
             keys,
             next: Mutex::new(0),
@@ -30,7 +34,8 @@ impl KeyPool {
         }
     }
 
-    /// Lease a key from the pool. Blocks (async) when all keys are in use.
+    /// Lease a key from the pool. Blocks (async) when all permits are in use.
+    /// Keys are assigned round-robin across leases.
     pub async fn lease(&self) -> KeyLease {
         let permit = self
             .semaphore
@@ -47,18 +52,27 @@ impl KeyPool {
         }
     }
 
-    pub fn pool_size(&self) -> usize {
+    /// Number of distinct API keys in the pool.
+    pub fn key_count(&self) -> usize {
         self.keys.len()
+    }
+
+    /// Total max concurrency (keys × leases per key).
+    pub fn max_concurrent(&self) -> usize {
+        self.keys.len() * MAX_LEASES_PER_KEY
     }
 }
 
-/// Load all API keys for a provider from environment variables.
+/// Load pool API keys for a provider from environment variables.
+/// Only checks multi-key env vars (comma-separated plural or numbered).
+/// Does NOT fall back to the single-key env var — that's handled by
+/// `Config::api_keys_for_provider` so config file `api_keys` arrays
+/// take priority over a single env var.
 ///
 /// Resolution order:
 /// 1. `ANTHROPIC_API_KEYS` (comma-separated)
 /// 2. `ANTHROPIC_API_KEY_1`, `_2`, ... `_20` (stop at first gap)
-/// 3. Single `ANTHROPIC_API_KEY` (fallback, pool of size 1)
-pub fn load_provider_keys(provider: Provider) -> Vec<String> {
+pub fn load_provider_pool_keys(provider: Provider) -> Vec<String> {
     let base = match provider {
         Provider::Anthropic => "ANTHROPIC_API_KEY",
         Provider::OpenRouter => "OPENROUTER_API_KEY",
@@ -88,14 +102,6 @@ pub fn load_provider_keys(provider: Provider) -> Vec<String> {
     }
     if !numbered.is_empty() {
         return numbered;
-    }
-
-    // 3. Single key fallback
-    if let Ok(v) = std::env::var(base) {
-        let v = v.trim().to_string();
-        if !v.is_empty() {
-            return vec![v];
-        }
     }
 
     Vec::new()

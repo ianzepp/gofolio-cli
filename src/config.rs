@@ -478,12 +478,12 @@ impl Config {
     }
 
     /// Load all API keys for a provider (pool mode).
-    /// Resolution: env pool vars > config `api_keys` array > config `api_key` single > env single.
+    /// Resolution: env pool vars > config `api_keys` array > single key (env or config).
     pub fn api_keys_for_provider(&self, provider: Provider) -> Vec<String> {
-        // 1. Env pool keys (comma-separated or numbered)
-        let env_keys = crate::key_pool::load_provider_keys(provider);
-        if !env_keys.is_empty() {
-            return env_keys;
+        // 1. Env pool keys (comma-separated plural or numbered — NOT single key)
+        let env_pool = crate::key_pool::load_provider_pool_keys(provider);
+        if !env_pool.is_empty() {
+            return env_pool;
         }
         // 2. Config api_keys array
         let pk = self.provider_keys(provider);
@@ -496,11 +496,9 @@ impl Config {
         if !pool.is_empty() {
             return pool;
         }
-        // 3. Config single api_key
-        if let Some(ref key) = pk.api_key {
-            if !key.trim().is_empty() {
-                return vec![key.clone()];
-            }
+        // 3. Single key fallback (env > config)
+        if let Some((key, _)) = self.key_for_provider_with_source(provider) {
+            return vec![key];
         }
         Vec::new()
     }
