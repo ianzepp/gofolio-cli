@@ -19,7 +19,7 @@ use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
-#[command(name = "ghostfolio")]
+#[command(name = "gofolio")]
 #[command(about = "Bloomberg-terminal TUI for Ghostfolio with AI agent")]
 struct Cli {
     #[command(subcommand)]
@@ -322,7 +322,7 @@ async fn main() {
 
 fn init_tracing() {
     let base_filter = EnvFilter::from_default_env();
-    let filter = match "ghostfolio_cli=info".parse() {
+    let filter = match "gofolio_cli=info".parse() {
         Ok(directive) => base_filter.add_directive(directive),
         Err(e) => {
             eprintln!("Warning: failed to parse default tracing directive: {e}");

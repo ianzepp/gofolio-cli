@@ -1,10 +1,10 @@
 [package]
-name = "ghostfolio-cli"
+name = "gofolio-cli"
 version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "ghostfolio"
+name = "gofolio"
 path = "src/main.rs"
 
 [dependencies]
